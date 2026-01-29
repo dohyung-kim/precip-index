@@ -2,32 +2,100 @@
 """
 Run all integration tests for precip-index package.
 
-This script executes all test files in sequence and provides a summary.
+This script executes all numbered test files in sequence and provides
+a comprehensive summary of results.
 
 Tests use TerraClimate Bali data (1958-2024) from input/ folder.
+
+Author: Benny Istanto
 """
 
 import sys
 import os
 import time
 import subprocess
+from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Repository root
+REPO_ROOT = Path(__file__).parent.parent
 
-def run_test(test_file):
-    """Run a single test file and return success status."""
-    print("\n" + "="*70)
-    print(f"Running: {test_file}")
+
+def print_header(title: str, width: int = 70):
+    """Print formatted header."""
+    print("\n" + "=" * width)
+    print(f" {title}")
+    print("=" * width)
+
+
+def print_ok(msg: str):
+    """Print success message."""
+    print(f"  [OK] {msg}")
+
+
+def print_fail(msg: str):
+    """Print failure message."""
+    print(f"  [FAIL] {msg}")
+
+
+def print_info(msg: str):
+    """Print info message."""
+    print(f"  [INFO] {msg}")
+
+
+def check_input_data():
+    """Check that required input data exists."""
+    print_header("CHECKING INPUT DATA")
+
+    input_dir = REPO_ROOT / 'input'
+    required_files = [
+        ('terraclimate_bali_ppt_1958_2024.nc', 'Precipitation (required)'),
+        ('terraclimate_bali_tmean_1958_2024.nc', 'Temperature mean (required)'),
+        ('terraclimate_bali_pet_1958_2024.nc', 'PET (optional)'),
+    ]
+    optional_files = [
+        ('terraclimate_bali_tmin_1958_2024.nc', 'Temperature min (for Hargreaves)'),
+        ('terraclimate_bali_tmax_1958_2024.nc', 'Temperature max (for Hargreaves)'),
+    ]
+
+    all_required_exist = True
+
+    for filename, description in required_files:
+        filepath = input_dir / filename
+        if filepath.exists():
+            size_mb = filepath.stat().st_size / (1024 * 1024)
+            print_ok(f"{description}: {filename} ({size_mb:.1f} MB)")
+        else:
+            print_fail(f"{description}: {filename} NOT FOUND")
+            all_required_exist = False
+
+    for filename, description in optional_files:
+        filepath = input_dir / filename
+        if filepath.exists():
+            size_mb = filepath.stat().st_size / (1024 * 1024)
+            print_ok(f"{description}: {filename} ({size_mb:.1f} MB)")
+        else:
+            print_info(f"{description}: {filename} (not found, will skip Hargreaves)")
+
+    return all_required_exist
+
+
+def run_test(test_file: Path) -> tuple:
+    """
+    Run a single test file.
+
+    Returns:
+        (success: bool, elapsed_time: float)
+    """
+    print(f"\n{'='*70}")
+    print(f"Running: {test_file.name}")
     print("="*70)
 
     start_time = time.time()
 
     try:
-        # Run test file
         result = subprocess.run(
-            [sys.executable, test_file],
-            cwd=os.path.join(os.path.dirname(__file__), '..'),
+            [sys.executable, str(test_file)],
+            cwd=str(REPO_ROOT),
             capture_output=False,
             text=True
         )
@@ -35,91 +103,89 @@ def run_test(test_file):
         elapsed = time.time() - start_time
 
         if result.returncode == 0:
-            print(f"\n[OK] PASSED ({elapsed:.1f}s)")
-            return True
+            print(f"\n[OK] {test_file.name} PASSED ({elapsed:.1f}s)")
+            return True, elapsed
         else:
-            print(f"\n[X] FAILED ({elapsed:.1f}s)")
-            return False
+            print(f"\n[FAIL] {test_file.name} FAILED ({elapsed:.1f}s)")
+            return False, elapsed
 
     except Exception as e:
         elapsed = time.time() - start_time
-        print(f"\n[X] ERROR ({elapsed:.1f}s): {e}")
-        return False
+        print(f"\n[ERROR] {test_file.name}: {e}")
+        return False, elapsed
+
 
 def main():
     """Run all tests."""
-    print("\n" + "="*70)
-    print("PRECIP-INDEX TEST SUITE")
-    print("="*70)
-    print("Running all integration tests...")
-    print("Dataset: TerraClimate Bali (1958-2024)")
-    print("Source: input/ folder\n")
+    print_header("PRECIP-INDEX TEST SUITE", width=70)
+    print("Running integration tests with TerraClimate Bali data (1958-2024)")
+    print("Source: input/ folder")
 
-    # Check input data exists
-    required_files = [
-        'input/terraclimate_bali_ppt_1958_2024.nc',
-        'input/terraclimate_bali_tmean_1958_2024.nc',
-        'input/terraclimate_bali_pet_1958_2024.nc'
-    ]
+    # Check input data
+    if not check_input_data():
+        print("\n[FAIL] Required input data missing. Cannot proceed.")
+        print("Please ensure TerraClimate Bali data files are in the input/ folder.")
+        return 1
 
-    print("Checking input data files...")
-    for file in required_files:
-        file_path = os.path.join(os.path.dirname(__file__), '..', file)
-        if os.path.exists(file_path):
-            size_mb = os.path.getsize(file_path) / (1024 * 1024)
-            print(f"  [OK] {file} ({size_mb:.1f} MB)")
-        else:
-            print(f"  [X] {file} NOT FOUND!")
-            print(f"\nERROR: Required input data missing.")
-            print(f"Please ensure TerraClimate Bali data is in the input/ folder.")
-            sys.exit(1)
+    # Find all numbered test files
+    tests_dir = Path(__file__).parent
+    test_files = sorted(tests_dir.glob('[0-9][0-9]_*.py'))
 
-    # Define test files
-    tests = [
-        'tests/test_spi.py',
-        'tests/test_spei_with_pet.py',
-        'tests/test_drought_characteristics.py',
-        'tests/test_complete_analysis.py'
-    ]
+    if not test_files:
+        print("\n[FAIL] No test files found!")
+        return 1
 
-    # Track results
+    print_header("RUNNING TESTS")
+    print(f"Found {len(test_files)} test files:")
+    for tf in test_files:
+        print(f"  - {tf.name}")
+
+    # Run each test
     results = {}
     total_start = time.time()
 
-    # Run each test
-    for test in tests:
-        test_name = os.path.basename(test)
-        success = run_test(test)
-        results[test_name] = success
+    for test_file in test_files:
+        success, elapsed = run_test(test_file)
+        results[test_file.name] = {'success': success, 'time': elapsed}
 
     total_elapsed = time.time() - total_start
 
-    # Print summary
-    print("\n" + "="*70)
-    print("TEST SUMMARY")
-    print("="*70)
+    # Summary
+    print_header("TEST SUMMARY")
 
-    passed = sum(results.values())
+    passed = sum(1 for r in results.values() if r['success'])
     failed = len(results) - passed
 
-    for test_name, success in results.items():
-        status = "[OK] PASSED" if success else "[X] FAILED"
-        print(f"{status:12s} - {test_name}")
+    for name, result in results.items():
+        status = "[OK]  " if result['success'] else "[FAIL]"
+        print(f"  {status} {name} ({result['time']:.1f}s)")
 
-    print("-"*70)
-    print(f"Total: {passed}/{len(results)} tests passed")
-    print(f"Elapsed time: {total_elapsed:.1f}s")
-    print("="*70)
+    print("-" * 70)
+    print(f"  Total: {passed}/{len(results)} tests passed")
+    print(f"  Elapsed time: {total_elapsed:.1f}s")
+    print("=" * 70)
 
-    # Exit with appropriate code
+    # Output summary
+    output_dir = tests_dir / 'output'
+    if output_dir.exists():
+        netcdf_count = len(list((output_dir / 'netcdf').glob('*.nc'))) if (output_dir / 'netcdf').exists() else 0
+        plots_count = len(list((output_dir / 'plots').glob('*.png'))) if (output_dir / 'plots').exists() else 0
+        reports_count = len(list((output_dir / 'reports').glob('*.txt'))) if (output_dir / 'reports').exists() else 0
+
+        print(f"\nOutputs created:")
+        print(f"  - NetCDF files: {netcdf_count}")
+        print(f"  - Plot files: {plots_count}")
+        print(f"  - Report files: {reports_count}")
+        print(f"  - Location: {output_dir}")
+
+    # Exit status
     if failed > 0:
-        print(f"\n[X] {failed} test(s) failed")
-        sys.exit(1)
+        print(f"\n[FAIL] {failed} test(s) failed")
+        return 1
     else:
         print("\n[OK] All tests passed!")
-        print("\nAll test outputs created in:")
-        print("  - test_output/ - NetCDF files, plots, and test results")
-        sys.exit(0)
+        return 0
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

@@ -1,0 +1,80 @@
+======================================================================
+Data Quality Report
+Generated: 2026-01-29 13:34:52
+======================================================================
+
+File Availability:
+
+  [OK] precip: 0.83 MB
+  [OK] tmean: 1.69 MB
+  [OK] tmin: 1.62 MB
+  [OK] tmax: 1.64 MB
+  [OK] pet: 0.76 MB
+
+Data Quality Summary:
+
+
+PRECIP:
+  Shape: (804, 24, 35)
+  Time: 1958-01-01 to 2024-12-01
+  Mean: 158.57, Std: 140.51
+  Range: [0.01, 1004.70]
+  Missing: 62.0%
+
+TMEAN:
+  Shape: (804, 24, 35)
+  Time: 1958-01-01 to 2024-12-01
+  Mean: 24.54, Std: 2.70
+  Range: [14.62, 29.85]
+  Missing: 62.0%
+
+TMIN:
+  Shape: (804, 24, 35)
+  Time: 1958-01-01 to 2024-12-01
+  Mean: 19.85, Std: 2.74
+  Range: [8.81, 25.40]
+  Missing: 62.0%
+
+TMAX:
+  Shape: (804, 24, 35)
+  Time: 1958-01-01 to 2024-12-01
+  Mean: 29.23, Std: 2.79
+  Range: [18.89, 35.82]
+  Missing: 62.0%
+
+PET:
+  Shape: (804, 24, 35)
+  Time: 1958-01-01 to 2024-12-01
+  Mean: 112.41, Std: 20.29
+  Range: [49.90, 186.00]
+  Missing: 62.0%
+
+Data Consistency:
+
+  [OK] tmean matches reference
+  [OK] tmin matches reference
+  [OK] tmax matches reference
+  [OK] pet matches reference
+
+Calibration Period: 1991-2020
+
+  [OK] precip: 1958-2024
+  [OK] tmean: 1958-2024
+  [OK] tmin: 1958-2024
+  [OK] tmax: 1958-2024
+  [OK] pet: 1958-2024
+
+Value Range Validation:
+
+  [OK] precip: [0.0, 1004.7]
+  [OK] tmean: [14.6, 29.9]
+  [OK] tmin: [8.8, 25.4]
+  [OK] tmax: [18.9, 35.8]
+  [OK] pet: [49.9, 186.0]
+
+Readiness Assessment:
+
+  [OK] SPI: Ready
+  [OK] SPEI (pre-computed PET): Ready
+  [OK] SPEI (Thornthwaite): Ready
+  [OK] SPEI (Hargreaves): Ready

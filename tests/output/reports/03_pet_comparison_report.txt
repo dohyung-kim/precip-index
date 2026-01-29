@@ -1,0 +1,18 @@
+======================================================================
+PET Method Comparison Report
+Generated: 2026-01-29 13:38:55
+======================================================================
+
+PET Method Comparison:
+
+
+Summary Statistics:
+  TerraClimate: mean=112.4, std=20.3 mm/month
+  Thornthwaite: mean=115.5, std=28.5 mm/month
+  Hargreaves: mean=132.1, std=16.9 mm/month
+
+Correlation with TerraClimate:
+  Thornthwaite: r=0.7483, RMSE=19.18, Bias=-3.08
+  Hargreaves: r=0.8046, RMSE=23.11, Bias=-19.71
+
+Thornthwaite vs Hargreaves: r=0.6868

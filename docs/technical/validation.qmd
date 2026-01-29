@@ -5,217 +5,323 @@ subtitle: "Verifying SPI/SPEI output quality across distributions and configurat
 
 This page presents validation results from the `precip-index` test suite, run against TerraClimate monthly data for **Bali, Indonesia (1958--2024)**. Each test verifies that the package produces statistically sound drought and wet-spell indices across multiple probability distributions.
 
-::: {.callout-note}
-## Test Dataset
 
-- **Source**: TerraClimate monthly gridded data
-- **Domain**: Bali, Indonesia (114.35--115.77 E, 8.94--7.98 S)
-- **Grid**: 24 x 35 cells (~4 km resolution)
-- **Period**: January 1958 -- December 2024 (804 months)
-- **Land cells**: 319 of 840 total (38.0%)
-- **Temporal completeness**: 100% for all land cells
+## About the Test Dataset {#sec-test-data}
+
+### Why Bali, Indonesia?
+
+Bali was selected as the validation region for several reasons that make it ideal for testing drought indices:
+
+1. **Tropical Monsoon Climate** — Bali has a distinct wet season (November–March) and dry season (April–October), providing clear seasonal precipitation variability essential for SPI/SPEI validation.
+
+2. **Strong ENSO Signal** — The island is highly sensitive to El Niño-Southern Oscillation (ENSO) events. Major droughts in 1997-98, 2015-16, and 2019 coincided with strong El Niño episodes, providing known "ground truth" events to validate against.
+
+3. **Diverse Topography** — Elevation ranges from sea level to >3,000m (Mt. Agung), creating orographic rainfall gradients. This tests the package's ability to handle spatial variability within a small domain.
+
+4. **Manageable Size** — The ~5,780 km² island provides enough grid cells (319 land cells) for meaningful spatial statistics while keeping computation times reasonable for testing.
+
+5. **Long Climate Record** — TerraClimate provides data from 1958, enabling 67-year analyses of drought trends and decadal variability.
+
+### Test Data Specifications
+
+::: {.callout-note}
+## Dataset Summary
+
+| Parameter | Value |
+|:----------|:------|
+| **Source** | TerraClimate monthly gridded climate data |
+| **Domain** | Bali, Indonesia (114.35–115.77°E, 7.98–8.94°S) |
+| **Resolution** | ~4 km (1/24°) |
+| **Grid Size** | 24 × 35 cells (840 total, 319 land cells) |
+| **Time Period** | January 1958 – December 2024 (804 months, 67 years) |
+| **Land Coverage** | 38.0% of grid cells |
+| **Temporal Completeness** | 100% for all land cells |
 :::
+
+### Available Variables
+
+The test suite uses five TerraClimate variables:
+
+| Variable | Description | Units | Mean | Range |
+|:---------|:------------|:------|:-----|:------|
+| **ppt** | Precipitation | mm/month | 158.6 | 0.01 – 1004.7 |
+| **tmean** | Mean temperature | °C | 24.5 | 14.6 – 29.9 |
+| **tmin** | Minimum temperature | °C | 19.9 | 8.8 – 25.4 |
+| **tmax** | Maximum temperature | °C | 29.2 | 18.9 – 35.8 |
+| **pet** | Potential evapotranspiration (Penman-Monteith) | mm/month | 112.4 | 49.9 – 186.0 |
+
+: TerraClimate variables used for validation. Statistics are for land cells only. {#tbl-variables}
+
+### Study Domain
+
+The map below shows the Bali test domain with SPI-12 values at selected time points. Ocean cells (white) are automatically masked during processing.
+
+![Bali test domain showing SPI-12 spatial patterns. The island's topography creates rainfall gradients visible in the drought/wet patterns. Northern lowlands and volcanic highlands often show different drought intensities.](../images/spi_12_spatial_maps.png){#fig-bali-domain}
+
+### Climate Context
+
+Understanding Bali's climate helps interpret the validation results:
+
+- **Annual Rainfall**: ~1,900 mm/year on average, but highly variable (1,200–3,000 mm depending on location and year)
+- **Wet Season**: November–March (80% of annual rainfall)
+- **Dry Season**: April–October (can be severe during El Niño years)
+- **Temperature**: Relatively stable year-round (24–26°C at lowlands), with cooler highlands
+
+**Major Drought Events in the Record**:
+
+| Event | Period | Cause | SPI-12 Peak |
+|:------|:-------|:------|:------------|
+| 1997-98 drought | Jul 1997 – Apr 1998 | Strong El Niño | < -2.5 |
+| 2015-16 drought | Aug 2015 – Mar 2016 | Strong El Niño | < -2.0 |
+| 2019 drought | Jul – Nov 2019 | Moderate El Niño | < -1.5 |
+| 1982-83 drought | Jun 1982 – May 1983 | Strong El Niño | < -2.0 |
+
+: Major drought events in the Bali record. These events serve as validation benchmarks. {#tbl-droughts}
+
+These known drought events provide "ground truth" for validating that the package correctly identifies extreme conditions.
+
 
 ## 1. SPI Distribution Comparison {#sec-spi-distribution}
 
-### 1.1 SPI-3 Time Series
+### 1.1 Multi-Scale SPI Comparison
 
-The Standardized Precipitation Index (SPI) at 3-month scale was computed with three probability distributions: **Gamma** (the standard for SPI), **Pearson Type III**, and **Log-Logistic**. The bar charts below show the SPI-3 time series at a single land cell (8.19 S, 114.56 E) for each distribution.
+SPI at different accumulation periods captures drought signals at varying time scales. The multi-scale comparison shows how drought patterns evolve from short-term (SPI-1) to long-term (SPI-24) perspectives.
 
-![SPI-3 time series for Gamma, Pearson III, and Log-Logistic distributions. Blue bars indicate wet conditions (SPI > 0), red bars indicate dry conditions (SPI < 0). Dashed lines mark moderate (-1/+1) and severe (-2/+2) thresholds.](../images/spi3_distribution_comparison.png){#fig-spi3-timeseries}
-
-**What to look for**:
-
-- All three distributions produce visually similar patterns --- the same drought and wet events appear at the same times.
-- Pearson III and Log-Logistic closely track the Gamma reference, with minor differences in the tails (extreme events).
-- No distribution shows flat lines or clipped values, confirming that the fitting algorithms converge correctly.
-
-### 1.2 Cross-Distribution Scatter
-
-The scatter plots below compare SPI-3 values between Gamma (x-axis) and each alternative distribution (y-axis). Points near the 1:1 diagonal indicate agreement.
-
-![Scatter comparison of SPI-3 values: Gamma vs Pearson III (left) and Gamma vs Log-Logistic (right). Correlation coefficients (r) are shown in the title of each panel.](../images/spi3_distribution_scatter.png){#fig-spi3-scatter}
+![Multi-scale SPI comparison (1, 3, 6, 12, 24 months) using the Gamma distribution. Each scale captures different drought types: SPI-1 for meteorological, SPI-3 for agricultural, SPI-6/12 for hydrological, and SPI-24 for socioeconomic drought.](../images/spi_multiscale_comparison.png){#fig-spi-multiscale}
 
 **What to look for**:
 
-- Both alternative distributions correlate at r > 0.99 with Gamma.
-- Points cluster tightly along the diagonal, indicating consistent drought/wet classification regardless of distribution choice.
-- Slight deviations at the tails are expected --- different distributions model extreme events differently.
+- SPI-1 shows high-frequency variability responding to monthly rainfall anomalies.
+- SPI-3 smooths out noise while capturing seasonal drought patterns relevant to agriculture.
+- SPI-12 and SPI-24 show persistent multi-year drought cycles useful for water resource management.
+- The 1997-98 El Niño and 2015-16 drought events are visible across all scales.
 
-### 1.3 Multi-Scale SPI (Gamma)
+### 1.2 Distribution Comparison
 
-SPI at 3-, 6-, 9-, and 12-month accumulation periods captures drought signals at different time scales. Shorter scales (SPI-3) respond to recent rainfall anomalies; longer scales (SPI-12) reflect cumulative deficits.
+The SPI was computed with three probability distributions: **Gamma** (WMO standard), **Pearson Type III**, and **Log-Logistic**. All three produce highly consistent results.
 
-![Multi-scale SPI (3, 6, 9, 12 months) using the Gamma distribution. Longer accumulation periods produce smoother signals with fewer but more persistent drought/wet events.](../images/spi_multiscale_gamma.png){#fig-spi-multiscale}
+![SPI-12 distribution comparison showing high correlation (r > 0.98) between all three distributions.](../images/spi_distribution_comparison.png){#fig-spi-dist-comparison}
+
+**Cross-Distribution Correlations (SPI-12)**:
+
+| Distribution Pair | Correlation |
+|:------------------|:------------|
+| Gamma vs Pearson III | r = 0.992 |
+| Gamma vs Log-Logistic | r = 0.996 |
+| Pearson III vs Log-Logistic | r = 0.993 |
+
+: Cross-distribution correlations for SPI-12 on Bali dataset. {#tbl-spi-corr}
+
+### 1.3 WMO Time Series Visualization
+
+The `plot_index()` function produces standardized bar charts following WMO drought classification guidelines.
+
+![SPI-12 WMO time series plot with 11-category color classification. Red colors indicate drought conditions, blue colors indicate wet conditions.](../images/spi_12_wmo_timeseries.png){#fig-spi12-wmo}
 
 **What to look for**:
 
-- SPI-3 shows high-frequency variability with many short-duration events.
-- SPI-12 shows long-duration events with gradual onset and recovery --- useful for monitoring hydrological drought.
-- The transition from SPI-3 to SPI-12 demonstrates how temporal smoothing captures progressively longer-term drought dynamics.
+- The 11-category WMO color scheme correctly maps index values to severity classes.
+- Major drought events (1997-98, 2015-16, 2019) are clearly visible.
+- The time axis spans the full 67-year record with readable labels.
 
-### 1.4 Spatial SPI-3 Maps
+### 1.4 Spatial SPI Maps
 
-Spatial maps show SPI-3 values at the most recent timestep across the entire Bali domain, for each distribution.
+Spatial maps show SPI-12 values across the entire Bali domain for selected time periods.
 
-![Spatial SPI-3 comparison across distributions at the latest time step. The RdYlBu color scale maps red to dry conditions and blue to wet conditions. Ocean cells appear as white/no-data.](../images/spi3_spatial_distribution_comparison.png){#fig-spi3-spatial}
+![Spatial SPI-12 maps showing drought conditions at different time points. Ocean cells are correctly masked.](../images/spi_12_spatial_maps.png){#fig-spi12-spatial}
 
 **What to look for**:
 
-- Spatial patterns are consistent across all three distributions --- the same areas show drought (red) or surplus (blue).
+- Spatial patterns show physically consistent gradients across the island.
+- Northern lowlands and southern highlands often show different drought intensities.
 - Ocean cells are correctly masked as no-data.
-- The color scale uses **RdYlBu** (Red-Yellow-Blue), following the WMO convention where red indicates dry and blue indicates wet conditions.
-
-### 1.5 Spatial Difference from Gamma
-
-The difference maps isolate where Pearson III and Log-Logistic deviate from the Gamma baseline.
-
-![Spatial difference maps: Pearson III minus Gamma (left) and Log-Logistic minus Gamma (right). Green/purple diverging scale highlights areas of disagreement.](../images/spi3_spatial_difference_from_gamma.png){#fig-spi3-diff}
-
-**What to look for**:
-
-- Most land cells show near-zero difference (white), confirming that alternative distributions agree with Gamma for typical conditions.
-- Small differences (green/purple) may occur at individual cells where the fitted distribution shape diverges --- this is expected and indicates sensitivity to local precipitation characteristics.
 
 
 ## 2. SPEI Distribution Comparison {#sec-spei-distribution}
 
-### 2.1 SPEI-6 Time Series
+### 2.1 WMO Time Series
 
-The Standardized Precipitation-Evapotranspiration Index (SPEI) at 6-month scale incorporates both precipitation and potential evapotranspiration (PET). Here we use pre-computed TerraClimate PET.
+The Standardized Precipitation-Evapotranspiration Index (SPEI) incorporates both precipitation and potential evapotranspiration, making it sensitive to temperature-driven drought intensification.
 
-![SPEI-6 time series for Gamma, Pearson III, and Log-Logistic distributions. The structure mirrors the SPI comparison but includes evaporative demand in the water balance.](../images/spei6_distribution_comparison.png){#fig-spei6-timeseries}
+![SPEI-12 WMO time series plot. Compared to SPI, SPEI may show enhanced drought signals during warm periods due to increased evaporative demand.](../images/spei_12_wmo_timeseries.png){#fig-spei12-wmo}
 
-**What to look for**:
+### 2.2 SPEI Spatial Maps
 
-- SPEI-6 shows a different temporal pattern from SPI because it accounts for temperature-driven evaporative demand.
-- All three distributions produce consistent results, with the same major drought events identified.
-- Post-2000 drying trends may appear more pronounced in SPEI than SPI due to warming temperatures increasing PET.
-
-### 2.2 SPEI Cross-Distribution Scatter
-
-![Scatter comparison of SPEI-6 values: Gamma vs Pearson III (left) and Gamma vs Log-Logistic (right).](../images/spei6_distribution_scatter.png){#fig-spei6-scatter}
-
-**What to look for**:
-
-- High correlation (r > 0.98) between distributions confirms robust SPEI computation.
-- Any systematic offset from the diagonal would indicate a bias in one distribution's tail behavior.
-
-### 2.3 PET Input Comparison
-
-SPEI can be computed using pre-computed PET or by deriving PET from temperature via the Thornthwaite method. The comparison below shows SPEI-6 from both approaches.
-
-![SPEI-6 comparison: pre-computed PET input (top) vs temperature-derived PET (bottom). Both use the Gamma distribution.](../images/spei6_pet_vs_temp_comparison.png){#fig-spei6-pet-temp}
-
-**What to look for**:
-
-- Both input methods produce similar SPEI patterns, validating the internal PET calculation.
-- Minor differences are expected because TerraClimate PET uses the Penman-Monteith method while the auto-computed PET uses the simpler Thornthwaite method.
-- Correlation between the two approaches is typically > 0.98.
-
-### 2.4 Spatial SPEI-6 Maps
-
-![Spatial SPEI-6 comparison across distributions at the latest time step.](../images/spei6_spatial_distribution_comparison.png){#fig-spei6-spatial}
-
-### 2.5 Spatial Difference from Gamma
-
-![Spatial SPEI-6 difference maps: Pearson III minus Gamma (left) and Log-Logistic minus Gamma (right).](../images/spei6_spatial_difference_from_gamma.png){#fig-spei6-diff}
+![Spatial SPEI-12 maps showing the combined effect of precipitation deficits and evaporative demand.](../images/spei_12_spatial_maps.png){#fig-spei12-spatial}
 
 
-## 3. Event Analysis & Visualization {#sec-event-analysis}
+## 3. PET Method Comparison {#sec-pet-comparison}
 
-### 3.1 SPI-12 Index Plot (Gamma)
+### 3.1 Three PET Methods
 
-The `plot_index()` function produces a standardized bar chart with the WMO 11-category color scheme.
+The package supports multiple PET calculation methods. Validation compares:
 
-![SPI-12 index plot using the Gamma distribution. Colors follow the WMO drought classification: dark red for exceptional drought (SPI < -2.0), dark blue for exceptionally wet (SPI > 2.0).](../images/test_plot_index.png){#fig-plot-index}
+1. **TerraClimate PET** (Penman-Monteith reference)
+2. **Thornthwaite** (temperature-only method)
+3. **Hargreaves-Samani** (temperature range method)
 
-**What to look for**:
+![PET method comparison: time series and scatter plots comparing Thornthwaite and Hargreaves against TerraClimate Penman-Monteith reference.](../images/pet_comparison_timeseries_scatter.png){#fig-pet-comparison}
 
-- The 11-category color scheme correctly maps SPI ranges to drought/wet severity classes.
-- Zero line and threshold markers are visible.
-- Time axis labels are readable and correctly formatted.
+### 3.2 PET Method Summary
 
-### 3.2 SPI-12 Index Plot (Pearson III)
+![PET method summary showing spatial patterns and statistical comparison of all three methods.](../images/pet_method_summary.png){#fig-pet-summary}
 
-![Same location as above but using Pearson III distribution. The overall pattern matches Gamma closely, with minor differences at extremes.](../images/test_plot_index_pearson3.png){#fig-plot-index-p3}
+**PET Method Statistics**:
 
-**What to look for**:
+| PET Method | Mean (mm/month) | Std Dev | Correlation with Reference | RMSE | Bias |
+|:-----------|:----------------|:--------|:---------------------------|:-----|:-----|
+| TerraClimate (reference) | 112.4 | 20.3 | — | — | — |
+| Thornthwaite | 115.5 | 28.5 | r = 0.748 | 19.2 | -3.1 |
+| Hargreaves | 132.1 | 16.9 | r = 0.805 | 23.1 | -19.7 |
 
-- The Pearson III plot reproduces the same drought events as Gamma, confirming that the distribution fix (Method of Moments fitting) produces valid results.
-- Extreme values may differ slightly from Gamma --- this reflects the different tail behavior of Pearson III.
+: PET method comparison statistics for Bali. {#tbl-pet-stats}
 
-### 3.3 Event Timeline
+**Key findings**:
 
-The `plot_event_timeline()` function shows dry/wet events as horizontal bars with severity indicated by color intensity.
-
-![Event timeline showing identified dry/wet events along the time axis. Bar height and color indicate event severity and duration.](../images/test_plot_timeline.png){#fig-plot-timeline}
-
-### 3.4 Distribution Comparison (Run Theory)
-
-Event characteristics (duration, magnitude, intensity) can differ depending on which distribution was used to compute the SPI. This plot compares event characteristics across distributions.
-
-![Run theory event comparison across distributions, showing how the choice of probability distribution affects event identification.](../images/test_runtheory_distribution_comparison.png){#fig-runtheory-comparison}
+- Hargreaves shows better correlation (r = 0.80) with the Penman-Monteith reference.
+- Thornthwaite has lower bias but higher variance.
+- For tropical regions like Bali, Hargreaves is recommended when Tmin/Tmax are available.
 
 
-## 4. Spatial Event Statistics {#sec-spatial-stats}
+## 4. SPI vs SPEI Comparison {#sec-spi-spei}
 
-### 4.1 Dry Event Count
+### 4.1 Time Series Comparison
 
-The `calculate_period_statistics()` function counts events per grid cell over a defined period. The spatial map below shows dry (drought) event counts for 2000--2023.
+Direct comparison between SPI and SPEI reveals the impact of evaporative demand on drought assessment.
 
-![Spatial map of dry event counts (SPI-12 < -1.2, minimum 2-month duration) for the period 2000--2023 across Bali.](../images/test_spatial_drought_events.png){#fig-spatial-drought}
+![SPI-12 vs SPEI-12 time series comparison. High correlation (r > 0.96) with subtle differences during warm periods.](../images/spi_spei_timeseries_12.png){#fig-spi-spei-ts}
+
+### 4.2 Scatter Analysis
+
+![Scatter plot of SPI-12 vs SPEI-12 values showing tight correlation along the 1:1 line.](../images/spi_spei_scatter_12.png){#fig-spi-spei-scatter}
+
+### 4.3 Drought Area Comparison
+
+![Drought area percentage comparison between SPI and SPEI over time.](../images/spi_spei_drought_area_12.png){#fig-drought-area}
+
+**SPI vs SPEI Statistics**:
+
+| Scale | Correlation | RMSE | Bias (SPI-SPEI) | Agreement Rate |
+|:------|:------------|:-----|:----------------|:---------------|
+| 3-month | r = 0.965 | 0.263 | +0.026 | 94.7% |
+| 12-month | r = 0.982 | 0.195 | +0.054 | 95.6% |
+
+: SPI vs SPEI comparison statistics. {#tbl-spi-spei}
+
+
+## 5. Advanced Visualizations {#sec-advanced-viz}
+
+### 5.1 Seasonal Drought Heatmap
+
+The seasonal heatmap reveals month-by-month drought patterns across years, useful for identifying seasonal drought tendencies.
+
+![Seasonal drought heatmap showing SPI-12 values by month (rows) and year (columns). Red indicates drought conditions, blue indicates wet conditions.](../images/spi_12_seasonal_heatmap.png){#fig-seasonal-heatmap}
 
 **What to look for**:
 
-- Higher event counts in areas more exposed to rainfall variability (e.g., northern lowlands).
-- Ocean cells correctly masked as no-data.
-- Event counts provide a spatial fingerprint of drought-prone areas.
+- Persistent drought years appear as vertical red bands (e.g., 1997, 2015, 2019).
+- Seasonal patterns may show if certain months are consistently drier.
+- Multi-year drought cycles are visible as horizontal red streaks.
 
-### 4.2 Wet Event Count
+### 5.2 Historical Extreme Events
 
-![Spatial map of wet event counts (SPI-12 > +1.2, minimum 2-month duration) for the period 2000--2023.](../images/test_spatial_wet_events.png){#fig-spatial-wet}
+Run theory analysis identifies and characterizes historical drought and wet events.
 
-### 4.3 Latest SPI-12 Spatial Map
-
-![SPI-12 (Gamma) at the most recent timestep (December 2024). Provides a snapshot of current drought/wet conditions across Bali.](../images/test_spatial_spi12_latest.png){#fig-spatial-latest}
+![Historical extreme events plot showing drought events (red shading) and wet events (blue shading) with run theory analysis. Top 5 drought events by magnitude are annotated.](../images/spi_12_historical_events.png){#fig-historical-events}
 
 **What to look for**:
 
-- This map represents the "current conditions" view that would be used in operational monitoring.
-- Spatial gradients show localized drought/wet patterns within the island.
+- Major drought events are automatically identified using run theory (threshold = -1.0).
+- Event magnitude (cumulative deficit) ranks the severity of each event.
+- The bottom panel shows event magnitude by year for trend analysis.
+
+### 5.3 Decadal Trend Analysis
+
+Long-term analysis reveals how drought frequency and intensity have changed over decades.
+
+![Decadal trend analysis showing: (a) drought frequency by decade, (b) mean SPI-12 by decade, (c) SPI distribution by decade, and (d) 10-year running mean with linear trend.](../images/spi_12_decadal_trends.png){#fig-decadal-trends}
+
+**What to look for**:
+
+- Drought frequency panel shows percentage of drought months per decade.
+- Boxplots reveal changes in drought variability across decades.
+- Running mean and linear trend indicate long-term drying or wetting tendencies.
+
+### 5.4 Exceedance Probability Plot
+
+The exceedance probability plot provides risk assessment information for planning purposes.
+
+![Exceedance probability curves for SPI-12 and SPEI-12. The plot shows the probability of exceeding different drought thresholds, with return period annotations.](../images/exceedance_probability.png){#fig-exceedance}
+
+**What to look for**:
+
+- The curve shows cumulative probability of exceeding each index value.
+- Vertical lines mark key thresholds (moderate, severe, extreme drought).
+- Return periods help translate index values into risk metrics.
+
+### 5.5 Climate Stripes Visualization
+
+Climate stripes provide an intuitive visual summary of drought conditions over the entire record.
+
+![Climate stripes visualization showing annual mean SPI-12 from 1959 to 2024. Each stripe represents one year, colored by drought severity (red) or wet conditions (blue).](../images/spi_12_climate_stripes.png){#fig-climate-stripes}
+
+**What to look for**:
+
+- Red stripes indicate drought years, blue stripes indicate wet years.
+- Clustering of red stripes reveals multi-year drought periods.
+- This visualization style (inspired by "warming stripes") provides immediate visual impact.
 
 
-## 5. Validation Summary {#sec-summary}
-
-### Distribution Fitting Quality
-
-| Distribution | Default Method | SPI Quality | SPEI Quality |
-|:------------|:--------------|:------------|:-------------|
-| **Gamma** | Method of Moments | Excellent (< 2% clipped) | Excellent |
-| **Pearson III** | Method of Moments | Excellent (< 1% clipped) | Excellent |
-| **Log-Logistic** | Maximum Likelihood (MLE) | Excellent (< 1% clipped) | Excellent |
-
-: Distribution fitting methods and output quality. "Clipped" refers to values reaching the +-3.09 bounds. {#tbl-dist-quality}
+## 6. Validation Summary {#sec-summary}
 
 ### Test Suite Results
 
-| Test Script | Status | Description |
-|:-----------|:-------|:-----------|
-| `test_spi.py` | PASS | SPI-3 with 3 distributions + multi-scale SPI + spatial maps |
-| `test_spei_with_pet.py` | PASS | SPEI-6 with 3 distributions + PET comparison + spatial maps |
-| `test_complete_analysis.py` | PASS | Full pipeline: SPI + run theory + visualization + Pearson III |
-| `test_drought_characteristics.py` | PASS | Run theory functions: event ID, timeseries, statistics |
+The test suite consists of 6 structured test modules that comprehensively validate the package:
 
-: Test suite results. All 4 tests pass with the TerraClimate Bali dataset. {#tbl-test-results}
+| Test Script | Status | Time | Description |
+|:-----------|:-------|:-----|:-----------|
+| `01_data_quality.py` | PASS | 14.6s | Data loading, quality checks, readiness assessment |
+| `02_spi_calculation.py` | PASS | 224.7s | SPI-3, SPI-12 with Gamma, Pearson III, Log-Logistic |
+| `03_pet_comparison.py` | PASS | 17.8s | Thornthwaite vs Hargreaves vs TerraClimate PET |
+| `04_spei_calculation.py` | PASS | 823.6s | SPEI with pre-computed PET, Thornthwaite, Hargreaves |
+| `05_spi_spei_comparison.py` | PASS | 17.7s | SPI vs SPEI correlation, drought detection comparison |
+| `06_visualization.py` | PASS | 147.7s | 25 visualization outputs including advanced analytics |
+
+: Test suite results. All 6 tests pass with the TerraClimate Bali dataset (total runtime: ~21 minutes). {#tbl-test-results}
+
+### Output Summary
+
+The test suite generates comprehensive outputs:
+
+- **NetCDF files**: 26 files (SPI/SPEI at multiple scales and distributions)
+- **Plot files**: 25 visualizations (time series, spatial maps, advanced analytics)
+- **Report files**: 5 text reports with detailed statistics
+
+### Distribution Fitting Quality
+
+| Distribution | Fitting Method | SPI Quality | SPEI Quality |
+|:------------|:--------------|:------------|:-------------|
+| **Gamma** | Method of Moments | Excellent | Excellent |
+| **Pearson III** | Method of Moments | Excellent | Excellent |
+| **Log-Logistic** | Maximum Likelihood | Excellent | Excellent |
+
+: Distribution fitting methods and output quality. {#tbl-dist-quality}
 
 ### Key Findings
 
-1. **All three distributions produce consistent results** --- correlation > 0.98 between any pair of distributions for both SPI and SPEI.
-2. **Method of Moments** is the recommended fitting method for Pearson III (fast, 100% convergence on all land cells).
-3. **MLE** is the recommended fitting method for Log-Logistic (100% convergence, best tail accuracy).
-4. **Land-aware data reporting** correctly identifies 319 land cells (38%) with 100% temporal completeness, avoiding the misleading "62% NaN" metric that includes ocean cells.
-5. **Spatial patterns are physically consistent** --- drought and wet events align with known climate variability for Bali.
+1. **All three distributions produce consistent results** — correlation > 0.98 between any pair of distributions for both SPI and SPEI.
+
+2. **Hargreaves PET outperforms Thornthwaite** when validated against Penman-Monteith reference (r = 0.805 vs r = 0.748 for Bali).
+
+3. **SPI and SPEI are highly correlated** (r > 0.96), with 94-96% agreement in drought detection.
+
+4. **Multi-scale analysis** reveals different drought patterns: meteorological (SPI-1), agricultural (SPI-3), hydrological (SPI-6/12), and socioeconomic (SPI-24).
+
+5. **Run theory event detection** successfully identifies major historical droughts including 1997-98 El Niño, 2015-16, and 2019 events.
+
+6. **Decadal trends** can be analyzed to assess long-term changes in drought frequency and intensity.
+
+7. **Advanced visualizations** (seasonal heatmaps, climate stripes, exceedance probability) provide intuitive tools for communication and risk assessment.
 
 ---
 

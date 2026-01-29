@@ -154,38 +154,56 @@ Regional subsets (country-level) complete in seconds to minutes.
 
 ## Validation Results
 
-All distributions tested against TerraClimate Bali data (1958–2024). Cross-distribution correlation exceeds 0.98.
+All distributions tested against TerraClimate Bali data (1958–2024). Cross-distribution correlation exceeds 0.98. The test suite generates **25 visualizations** including advanced analytics.
 
 ::: {.panel-tabset}
-### Distribution Comparison
-
-![](images/spi3_distribution_comparison.png)
-
-Three distributions produce consistent SPI-3 time series. The same events are identified regardless of distribution choice.
-
 ### Multi-Scale SPI
 
-![](images/spi_multiscale_gamma.png)
+![](images/spi_multiscale_comparison.png)
 
-SPI at 3-, 6-, 9-, and 12-month scales. Shorter scales capture recent anomalies; longer scales reveal persistent conditions.
+SPI at 1-, 3-, 6-, 12-, and 24-month scales. Each captures different drought types: meteorological, agricultural, hydrological, and socioeconomic.
 
-### Spatial Patterns
+### Distribution Comparison
 
-![](images/spi3_spatial_distribution_comparison.png)
+![](images/spi_distribution_comparison.png)
 
-Spatial SPI-3 maps across all three distributions. Patterns remain consistent.
+Three distributions produce consistent SPI-12 time series with correlation > 0.98 between all pairs.
 
-### SPEI Comparison
+### PET Methods
 
-![](images/spei6_pet_vs_temp_comparison.png)
+![](images/pet_comparison_timeseries_scatter.png)
 
-SPEI-6 with pre-computed PET vs temperature-derived PET. Both approaches yield consistent results (r > 0.98).
+PET method comparison: Thornthwaite vs Hargreaves vs TerraClimate (Penman-Monteith). Hargreaves correlates better with the reference (r=0.80 vs r=0.75).
 
-### Event Analysis
+### Seasonal Heatmap
 
-![](images/test_spatial_drought_events.png)
+![](images/spi_12_seasonal_heatmap.png)
 
-Spatial drought event counts (2000–2023) from run theory analysis.
+Seasonal drought heatmap showing month-by-year patterns. Major droughts (1997, 2015, 2019) appear as vertical red bands.
+
+### Historical Events
+
+![](images/spi_12_historical_events.png)
+
+Run theory analysis identifies and ranks historical drought/wet events by magnitude.
+
+### Decadal Trends
+
+![](images/spi_12_decadal_trends.png)
+
+Long-term analysis showing drought frequency, mean index, and trends by decade.
+
+### Climate Stripes
+
+![](images/spi_12_climate_stripes.png)
+
+Climate stripes visualization showing annual drought conditions from 1959-2024. Red = drought years, blue = wet years.
+
+### Exceedance Probability
+
+![](images/exceedance_probability.png)
+
+Risk assessment plot showing probability of exceeding drought thresholds with return period annotations.
 :::
 
 See [Validation & Test Results](technical/validation.qmd) for detailed analysis.
