@@ -435,8 +435,9 @@ def create_historical_events_plot(results: dict):
         # Identify wet events (positive threshold)
         wet_events = identify_events(ts, threshold=1.0)
 
-        # Create figure with 2 panels
-        fig, axes = plt.subplots(2, 1, figsize=(16, 10))
+        # Create figure with 2 panels sharing x-axis
+        fig, axes = plt.subplots(2, 1, figsize=(16, 10), sharex=True,
+                                 gridspec_kw={'height_ratios': [1.2, 1], 'hspace': 0.15})
 
         # Panel 1: Drought events
         ax1 = axes[0]
@@ -450,6 +451,8 @@ def create_historical_events_plot(results: dict):
         ax1.axhline(y=0, color='k', linewidth=0.5)
         ax1.axhline(y=-1, color='red', linestyle='--', linewidth=1, alpha=0.7, label='Drought threshold')
         ax1.axhline(y=-2, color='darkred', linestyle='--', linewidth=1, alpha=0.7, label='Extreme drought')
+        ax1.axhline(y=1, color='blue', linestyle='--', linewidth=1, alpha=0.7, label='Wet threshold')
+        ax1.axhline(y=2, color='darkblue', linestyle='--', linewidth=1, alpha=0.7, label='Extreme wet')
 
         # Annotate top 5 drought events
         if len(drought_events) > 0:
@@ -465,39 +468,86 @@ def create_historical_events_plot(results: dict):
                                fontsize=9, ha='center', color='darkred',
                                arrowprops=dict(arrowstyle='->', color='darkred', lw=0.5))
 
+        # Annotate top 5 wet events
+        if len(wet_events) > 0:
+            top_wets = wet_events.nlargest(5, 'magnitude')
+            for idx, event in top_wets.iterrows():
+                peak_idx = int(event['peak_idx'])
+                if peak_idx < len(times):
+                    peak_time = times[peak_idx]
+                    peak_val = values[peak_idx]
+                    ax1.annotate(f"{peak_time.year}",
+                               xy=(peak_time, peak_val),
+                               xytext=(0, 20), textcoords='offset points',
+                               fontsize=9, ha='center', color='darkblue',
+                               arrowprops=dict(arrowstyle='->', color='darkblue', lw=0.5))
+
         ax1.set_ylabel(name.upper(), fontsize=12)
-        ax1.set_title(f'{name.upper()} Historical Events - Bali (1958-2024)\n'
-                     f'Identified {len(drought_events)} drought events, {len(wet_events)} wet events',
+        ax1.set_title(f'{name.upper()} Historical Extreme Events - Bali (1958-2024)\n'
+                     f'Identified {len(drought_events)} drought and {len(wet_events)} wet events',
                      fontsize=14, fontweight='bold')
         ax1.set_ylim(-3.5, 3.5)
-        ax1.legend(loc='upper right')
+        ax1.legend(loc='upper right', fontsize=8, ncol=3)
         ax1.grid(True, alpha=0.3)
 
-        # Panel 2: Event statistics
+        # Panel 2: Event statistics (using datetime x-axis to align with top panel)
         ax2 = axes[1]
 
         if len(drought_events) > 0:
-            # Create bar chart of event magnitudes over time
-            event_years = []
-            event_mags = []
+            # Create bar chart using datetime positions to align with top panel
+            bar_width = np.timedelta64(180, 'D')  # ~6 months width for bars
+
+            drought_times = []
+            drought_mags = []
             for idx, event in drought_events.iterrows():
                 start_idx = int(event['start_idx'])
                 if start_idx < len(times):
-                    event_years.append(times[start_idx].year)
-                    event_mags.append(event['magnitude'])
+                    drought_times.append(times[start_idx])
+                    drought_mags.append(event['magnitude'])
 
-            ax2.bar(event_years, event_mags, color='#b2182b', alpha=0.7, width=0.8, label='Drought magnitude')
+            if drought_times:
+                ax2.bar(drought_times, drought_mags, color='#b2182b', alpha=0.7,
+                       width=bar_width, label='Drought magnitude')
 
             # Add wet events
             if len(wet_events) > 0:
-                wet_years = []
+                wet_times = []
                 wet_mags = []
                 for idx, event in wet_events.iterrows():
                     start_idx = int(event['start_idx'])
                     if start_idx < len(times):
-                        wet_years.append(times[start_idx].year)
+                        wet_times.append(times[start_idx])
                         wet_mags.append(event['magnitude'])
-                ax2.bar(wet_years, wet_mags, color='#2166ac', alpha=0.7, width=0.8, label='Wet magnitude')
+                if wet_times:
+                    ax2.bar(wet_times, wet_mags, color='#2166ac', alpha=0.7,
+                           width=bar_width, label='Wet magnitude')
+
+            # Annotate top 5 drought events on bottom panel
+            top_droughts = drought_events.nlargest(5, 'magnitude')
+            for idx, event in top_droughts.iterrows():
+                start_idx = int(event['start_idx'])
+                if start_idx < len(times):
+                    event_time = times[start_idx]
+                    event_mag = event['magnitude']
+                    ax2.annotate(f"{event_time.year}",
+                               xy=(event_time, event_mag),
+                               xytext=(0, 12), textcoords='offset points',
+                               fontsize=9, ha='center', color='darkred', fontweight='bold',
+                               arrowprops=dict(arrowstyle='->', color='darkred', lw=0.5))
+
+            # Annotate top 5 wet events on bottom panel
+            if len(wet_events) > 0:
+                top_wets = wet_events.nlargest(5, 'magnitude')
+                for idx, event in top_wets.iterrows():
+                    start_idx = int(event['start_idx'])
+                    if start_idx < len(times):
+                        event_time = times[start_idx]
+                        event_mag = event['magnitude']
+                        ax2.annotate(f"{event_time.year}",
+                                   xy=(event_time, event_mag),
+                                   xytext=(0, 12), textcoords='offset points',
+                                   fontsize=9, ha='center', color='darkblue', fontweight='bold',
+                                   arrowprops=dict(arrowstyle='->', color='darkblue', lw=0.5))
 
         ax2.set_xlabel('Year', fontsize=12)
         ax2.set_ylabel('Event Magnitude', fontsize=12)
