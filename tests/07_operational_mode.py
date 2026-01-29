@@ -506,65 +506,138 @@ def create_parameter_maps(spi_results: dict):
     print_ok(f"Saved: {filepath.name}")
 
 
-def create_multi_distribution_comparison(spi_results: dict):
-    """Create comparison plot across distributions."""
+def create_multi_distribution_comparison(spi_results: dict, spei_results: dict):
+    """Create comparison plot across distributions - compact horizontal layout."""
     plt = setup_matplotlib()
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    # Create a more compact figure with horizontal layout
+    fig = plt.figure(figsize=(14, 8))
 
-    # Get time series at sample location
-    colors = {'gamma': 'blue', 'pearson3': 'green', 'log_logistic': 'orange'}
+    # Use GridSpec for better control
+    gs = fig.add_gridspec(2, 3, width_ratios=[2, 2, 1.2], hspace=0.3, wspace=0.3)
 
-    for row, scale in enumerate([3, 12]):
-        # Left: Time series comparison
-        ax1 = axes[row, 0]
+    colors = {'gamma': '#2166ac', 'pearson3': '#1a9850'}
+    dist_labels = {'gamma': 'Gamma', 'pearson3': 'Pearson III'}
 
+    # Row 1: SPI
+    # Time series (SPI-3 and SPI-12 overlaid)
+    ax1 = fig.add_subplot(gs[0, 0])
+
+    for scale, ls in [(3, '-'), (12, '--')]:
         for dist in ['gamma', 'pearson3']:
             key = f'spi_{scale}_{dist}'
             if key in spi_results:
                 res = spi_results[key]
                 ts = res['spi_operational'].isel(lat=SAMPLE_LAT_IDX, lon=SAMPLE_LON_IDX)
                 times = ts.time.values
-
-                # Only plot last 10 years for clarity
                 years = np.array([t.astype('datetime64[Y]').astype(int) + 1970 for t in times])
-                mask = years >= 2015
+                mask = years >= 2018
 
-                ax1.plot(times[mask], ts.values[mask],
-                        color=colors[dist], linewidth=1,
-                        label=f'{DISTRIBUTION_DISPLAY_NAMES[dist]}')
+                label = f'SPI-{scale} ({dist_labels[dist]})' if dist == 'gamma' else None
+                ax1.plot(times[mask], ts.values[mask], color=colors[dist],
+                        linewidth=1 if scale == 3 else 1.5, linestyle=ls,
+                        alpha=0.8 if scale == 3 else 1.0, label=label)
 
-        ax1.axhline(0, color='gray', linestyle='-', linewidth=0.5)
-        ax1.axhline(-1, color='orange', linestyle='--', linewidth=0.5, alpha=0.5)
-        ax1.axvline(times[years >= OPERATIONAL_START][0], color='red',
-                   linestyle=':', linewidth=1, alpha=0.7)
+    ax1.axhline(0, color='gray', linestyle='-', linewidth=0.5)
+    ax1.axvline(times[years >= OPERATIONAL_START][0], color='red',
+               linestyle=':', linewidth=1.5, label='Operational start')
+    ax1.set_ylabel('SPI Value')
+    ax1.set_title('SPI Time Series (2018-2024)', fontsize=10)
+    ax1.legend(loc='upper left', fontsize=7, ncol=2)
+    ax1.set_ylim(-3, 3)
 
-        ax1.set_ylabel(f'SPI-{scale}')
-        ax1.set_title(f'SPI-{scale}: Distribution Comparison (2015-2024)')
-        ax1.legend(loc='upper right', fontsize=8)
-        ax1.set_ylim(-3.5, 3.5)
+    # Row 2: SPEI
+    ax2 = fig.add_subplot(gs[1, 0])
 
-        # Right: Validation scatter
-        ax2 = axes[row, 1]
-
+    for scale, ls in [(3, '-'), (12, '--')]:
         for dist in ['gamma', 'pearson3']:
-            key = f'spi_{scale}_{dist}'
-            if key in spi_results:
-                res = spi_results[key]
-                corr = res['correlation']
-                max_diff = res['max_diff']
+            key = f'spei_{scale}_{dist}'
+            if key in spei_results:
+                res = spei_results[key]
+                ts = res['spei_operational'].isel(lat=SAMPLE_LAT_IDX, lon=SAMPLE_LON_IDX)
+                times = ts.time.values
+                years = np.array([t.astype('datetime64[Y]').astype(int) + 1970 for t in times])
+                mask = years >= 2018
 
-                ax2.bar(dist, corr, color=colors[dist], alpha=0.7)
-                ax2.text(dist, corr + 0.001, f'r={corr:.6f}', ha='center', fontsize=8)
+                label = f'SPEI-{scale} ({dist_labels[dist]})' if dist == 'gamma' else None
+                ax2.plot(times[mask], ts.values[mask], color=colors[dist],
+                        linewidth=1 if scale == 3 else 1.5, linestyle=ls,
+                        alpha=0.8 if scale == 3 else 1.0, label=label)
 
-        ax2.set_ylabel('Correlation (operational vs fresh)')
-        ax2.set_title(f'SPI-{scale}: Validation Across Distributions')
-        ax2.set_ylim(0.999990, 1.000001)
-        ax2.axhline(1.0, color='red', linestyle='--', linewidth=0.5)
+    ax2.axhline(0, color='gray', linestyle='-', linewidth=0.5)
+    ax2.axvline(times[years >= OPERATIONAL_START][0], color='red',
+               linestyle=':', linewidth=1.5)
+    ax2.set_ylabel('SPEI Value')
+    ax2.set_title('SPEI Time Series (2018-2024)', fontsize=10)
+    ax2.legend(loc='upper left', fontsize=7, ncol=2)
+    ax2.set_ylim(-3, 3)
 
-    plt.suptitle('Multi-Scale, Multi-Distribution Operational Mode Validation',
-                 fontsize=12, fontweight='bold')
-    plt.tight_layout()
+    # Scatter plots: Operational vs Fresh
+    ax3 = fig.add_subplot(gs[0, 1])
+    ax4 = fig.add_subplot(gs[1, 1])
+
+    for ax, results, name in [(ax3, spi_results, 'SPI'), (ax4, spei_results, 'SPEI')]:
+        for dist in ['gamma', 'pearson3']:
+            for scale in [3, 12]:
+                key = f'{name.lower()}_{scale}_{dist}'
+                if key in results:
+                    res = results[key]
+                    oper = res[f'{name.lower()}_operational'].values.flatten()
+                    fresh = res[f'{name.lower()}_fresh'].values.flatten()
+                    valid = ~(np.isnan(oper) | np.isnan(fresh))
+
+                    # Subsample for performance
+                    idx = np.random.choice(np.where(valid)[0], min(1000, valid.sum()), replace=False)
+                    marker = 'o' if scale == 12 else 's'
+                    ax.scatter(fresh[idx], oper[idx], c=colors[dist], alpha=0.3, s=5,
+                              marker=marker, label=f'{name}-{scale} {dist_labels[dist]}')
+
+        ax.plot([-3, 3], [-3, 3], 'r-', linewidth=1, label='1:1 line')
+        ax.set_xlabel('Fresh Calculation')
+        ax.set_ylabel('Operational Mode')
+        ax.set_title(f'{name}: Operational vs Fresh', fontsize=10)
+        ax.set_xlim(-3.5, 3.5)
+        ax.set_ylim(-3.5, 3.5)
+        ax.set_aspect('equal')
+        ax.grid(True, alpha=0.3)
+
+    # Validation summary table
+    ax5 = fig.add_subplot(gs[:, 2])
+    ax5.axis('off')
+
+    # Create summary table
+    table_data = []
+    for name, results in [('SPI', spi_results), ('SPEI', spei_results)]:
+        for scale in [3, 12]:
+            for dist in ['gamma', 'pearson3']:
+                key = f'{name.lower()}_{scale}_{dist}'
+                if key in results:
+                    res = results[key]
+                    status = 'IDENTICAL' if res['is_identical'] else 'DIFFERS'
+                    table_data.append([f'{name}-{scale}', dist_labels[dist], status])
+
+    # Draw table
+    cell_text = table_data
+    col_labels = ['Index', 'Distribution', 'Status']
+
+    table = ax5.table(cellText=cell_text, colLabels=col_labels,
+                      cellLoc='center', loc='center',
+                      colColours=['#f0f0f0']*3)
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.2, 1.8)
+
+    # Color the status cells
+    for i, row in enumerate(cell_text):
+        if row[2] == 'IDENTICAL':
+            table[(i+1, 2)].set_facecolor('#d4edda')  # Light green
+        else:
+            table[(i+1, 2)].set_facecolor('#f8d7da')  # Light red
+
+    ax5.set_title('Validation Summary\n(All 8 Configurations)', fontsize=10, fontweight='bold', pad=20)
+
+    plt.suptitle('Operational Mode: Multi-Scale, Multi-Distribution Validation',
+                 fontsize=12, fontweight='bold', y=0.98)
 
     filepath = OUTPUT_PLOTS / 'operational_mode_multiscale.png'
     plt.savefig(filepath, dpi=150, bbox_inches='tight')
@@ -658,7 +731,7 @@ def main():
 
     create_operational_workflow_plot(spi_results, spei_results)
     create_parameter_maps(spi_results)
-    create_multi_distribution_comparison(spi_results)
+    create_multi_distribution_comparison(spi_results, spei_results)
 
     # ===== REPORT =====
     print_subheader("Generating Report")

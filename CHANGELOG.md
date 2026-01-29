@@ -2,124 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Calendar Versioning](https://calver.org/) (YYYY.M).
+This project adheres to [Calendar Versioning](https://calver.org/) (YYYY.M).
 
 ---
 
-## [2026.1.1] - 2026-01-27
-
-### Global-Scale Processing
-
-Major update adding memory-efficient processing for global-scale datasets.
-
-**New Module: `chunked.py`**
-
-- `ChunkedProcessor` class for memory-efficient computation
-- `compute_spi_chunked()` - Chunked SPI calculation with progress tracking
-- `compute_spei_chunked()` - Chunked SPEI calculation
-- `estimate_memory()` - Pre-computation memory estimation
-- `iter_chunks()` - Spatial chunk coordinate generator
-
-**New Functions in `indices.py`**
-
-- `spi_global()` - Global-scale SPI with automatic chunking
-- `spei_global()` - Global-scale SPEI with automatic chunking
-- `estimate_memory_requirements()` - Memory estimation utility
-
-**New Functions in `utils.py`**
-
-- `get_optimal_chunk_size()` - Calculate optimal chunk dimensions
-- `format_bytes()` - Human-readable byte formatting
-- `get_array_memory_size()` - Array memory footprint calculation
-- `print_memory_info()` - System memory status display
-
-**New Functions in `compute.py`**
-
-- `_rolling_sum_3d()` - O(n) cumulative sum algorithm
-- `_compute_gamma_params_vectorized()` - Memory-optimized parameter fitting
-- `_transform_to_normal_vectorized()` - Period-by-period transformation
-- `compute_index_dask()` - Fixed Dask integration
-- `compute_index_dask_to_zarr()` - Stream output to Zarr format
-
-**Memory Optimizations**
-
-- ~12x reduction in peak memory usage
-- Float32 internal processing (50% memory reduction)
-- Cumulative sum algorithm for O(n) rolling windows
-- Period-by-period processing to limit peak memory
-- Explicit garbage collection between chunks
-
-**New Dependencies**
-
-- `zarr>=2.10.0` - Efficient chunked array storage
-- `psutil>=5.8.0` - Memory detection and monitoring
-
-**New Notebook**
-
-- `05_global_scale_processing.ipynb` - Tutorial for global datasets
-
-**Configuration Updates**
-
-- Added memory constants in `config.py`
-- `MEMORY_MULTIPLIER`, `MEMORY_SAFETY_FACTOR`
-- `DEFAULT_CHUNK_LAT`, `DEFAULT_CHUNK_LON`
-
----
-
-## [2026.1] - 2026-01-21
+## [2026.1] - January 2026
 
 ### Initial Release
 
-First public release of the precip-index package - a streamlined implementation of SPI and SPEI for climate extremes monitoring.
+First public release of the precip-index package — a streamlined Python implementation for calculating SPI and SPEI climate indices with comprehensive event analysis capabilities.
 
-**Modified/adapted from:** [climate-indices](https://github.com/monocongo/climate_indices) by James Adams (monocongo)
+### Core Features
 
-### Features
+**Climate Indices**
 
-**Climate Indices:**
+- SPI (Standardized Precipitation Index) and SPEI (Standardized Precipitation Evapotranspiration Index)
+- Multi-scale support: 1, 3, 6, 12, 24 months
+- Five probability distributions: Gamma, Pearson III, Log-Logistic, GEV, Generalized Logistic
+- Automatic PET calculation from temperature:
+  - **Thornthwaite method** (default) — requires only mean temperature
+  - **Hargreaves-Samani method** — requires Tmin/Tmax, better for arid regions
+- Parameter save/load for operational workflows
+- CF-compliant NetCDF output with customizable metadata
 
-- SPI (Standardized Precipitation Index) calculation using Gamma distribution
-- SPEI (Standardized Precipitation Evapotranspiration Index) with Thornthwaite PET
-- Multi-scale support (1, 3, 6, 12, 24 months)
-- Parameter save/load functionality for faster recomputation
-- CF-compliant NetCDF output
+**Run Theory Analysis**
 
-**Climate Extremes Analysis (Run Theory):**
-
-- Event identification for both drought (dry) and wet conditions
-- Time-series monitoring with dual magnitude (cumulative & instantaneous)
+- Event identification for both dry (drought) and wet (flood) conditions
+- Dual magnitude tracking: cumulative and instantaneous
 - Gridded period statistics for decision support
-- Event characteristics: duration, magnitude, intensity, peak
-- Spatial aggregation and period comparison tools
+- Event characteristics: duration, magnitude, intensity, peak, inter-arrival
 
-**Visualization:**
+**Visualization**
 
-- WMO standard 11-category SPI/SPEI color classification
-- Event plots with automatic dry/wet differentiation
-- Timeline visualizations with multiple characteristics
+- WMO standard 11-category classification
+- Time series plots with event highlighting
 - Spatial statistics maps
+- Cross-distribution comparison charts
 
-### Technical Details
+### Technical Highlights
 
-- Optimized for global-scale gridded data
-- NumPy vectorization + Numba JIT compilation
-- CF Convention compliance (time, lat, lon)
-- Gamma distribution only (robust for arid regions)
-- Python 3.8+ support
+- Modular architecture: `indices.py`, `runtheory.py`, `distributions.py`, `visualization.py`
+- Centralized configuration via `config.py`
+- Memory-efficient chunked processing for global-scale data
+- NumPy vectorization with Numba JIT compilation
+- Robust fitting with automatic fallback chains (L-moments → Method of Moments → MLE)
+- Data diagnostics and goodness-of-fit testing
 
 ### Documentation
 
-- Comprehensive user guides for SPI, SPEI, and run theory
-- Jupyter notebook tutorials
-- Technical implementation documentation
-- Quick start guide
+- Comprehensive user guides for SPI, SPEI, run theory, and magnitude concepts
+- Technical documentation: methodology, distributions, implementation, API reference
+- Interactive Jupyter notebook tutorials
+- Quick start guide and configuration reference
 
 ---
 
 ## Future Releases
-
-Version 2026.2 and beyond will include:
 
 - Bug fixes and performance improvements
 - Additional test coverage
@@ -128,4 +66,4 @@ Version 2026.2 and beyond will include:
 
 ---
 
-**For detailed technical implementation notes, see [docs/technical/implementation.md](docs/technical/implementation.md)**
+**For detailed technical notes, see [Implementation Details](technical/implementation.qmd)**
