@@ -272,11 +272,100 @@ Climate stripes provide an intuitive visual summary of drought conditions over t
 - This visualization style (inspired by "warming stripes") provides immediate visual impact.
 
 
-## 6. Validation Summary {#sec-summary}
+## 6. Operational Mode: Parameter Persistence {#sec-operational}
+
+In real-world drought monitoring, you don't recalibrate every time new data arrives. Instead, you establish a stable baseline period, save those distribution parameters, and apply them consistently to new observations. This ensures temporal consistency and makes drought assessments comparable over time.
+
+### The Workflow
+
+1. **Calibration Phase**: Calculate SPI/SPEI on historical data (1958-2021) and save fitted distribution parameters
+2. **Operational Phase**: Load saved parameters and apply to new data (2022-2024) without refitting
+3. **Validation**: Confirm operational results are identical to fresh calculations
+
+### Workflow Visualization
+
+![Operational mode workflow: The top panel shows the full time series with calibration (blue) and operational (green) periods. The middle panel zooms on the transition to verify seamless continuation. The bottom panel validates that operational and fresh calculations produce identical results.](../images/operational_mode_workflow.png){#fig-operational-workflow}
+
+**What to look for**:
+
+- The transition from calibration to operational period should be seamless.
+- Results using loaded parameters match fresh calculations exactly (r = 1.0, max diff < 10⁻⁶).
+- New drought/wet events in 2022-2024 are properly detected using historical parameters.
+
+### Distribution Parameters
+
+The fitted parameters are stored as spatial grids for each calendar month, allowing consistent application to new data:
+
+![Distribution parameter maps showing the Gamma shape (alpha) and scale (beta) parameters for January and July. These parameters, fitted on 1958-2021 data, are applied to all future calculations.](../images/operational_mode_parameters.png){#fig-operational-params}
+
+### Multi-Scale, Multi-Distribution Validation
+
+The operational mode was validated across multiple configurations:
+
+![Multi-scale and multi-distribution validation showing that operational mode produces identical results across SPI-3, SPI-12 with both Gamma and Pearson III distributions.](../images/operational_mode_multiscale.png){#fig-operational-multiscale}
+
+**Validation Results**:
+
+| Configuration | Correlation | Max Difference | Status |
+|:-------------|:------------|:---------------|:-------|
+| SPI-3 (Gamma) | 1.000000 | 0.00e+00 | IDENTICAL |
+| SPI-3 (Pearson III) | 1.000000 | 0.00e+00 | IDENTICAL |
+| SPI-12 (Gamma) | 1.000000 | 0.00e+00 | IDENTICAL |
+| SPI-12 (Pearson III) | 1.000000 | 0.00e+00 | IDENTICAL |
+| SPEI-3 (Gamma) | 1.000000 | 0.00e+00 | IDENTICAL |
+| SPEI-3 (Pearson III) | 1.000000 | 0.00e+00 | IDENTICAL |
+| SPEI-12 (Gamma) | 1.000000 | 0.00e+00 | IDENTICAL |
+| SPEI-12 (Pearson III) | 1.000000 | 0.00e+00 | IDENTICAL |
+
+: Operational mode validation results. All 8 configurations produce results identical to fresh calculations. {#tbl-operational}
+
+### Usage Example
+
+```python
+from indices import spi, save_fitting_params, load_fitting_params
+
+# === CALIBRATION PHASE (run once) ===
+# Calculate SPI and get fitted parameters
+spi_12, params = spi(
+    historical_precip,  # 1958-2021
+    scale=12,
+    calibration_start_year=1991,
+    calibration_end_year=2020,
+    return_params=True
+)
+
+# Save parameters for future use
+save_fitting_params(
+    params, 'spi_12_params.nc',
+    scale=12, periodicity='monthly',
+    calibration_start_year=1991,
+    calibration_end_year=2020
+)
+
+# === OPERATIONAL PHASE (run monthly/as new data arrives) ===
+# Load saved parameters
+params = load_fitting_params('spi_12_params.nc', scale=12, periodicity='monthly')
+
+# Apply to new data without refitting
+spi_12_new = spi(
+    new_precip,  # 2022-2024 (or any period)
+    scale=12,
+    fitting_params=params  # Uses pre-computed parameters
+)
+```
+
+This workflow is essential for:
+
+- **Operational drought bulletins**: Maintain consistency across monthly updates
+- **Climate services**: Ensure comparability of drought assessments over time
+- **Near-real-time monitoring**: Avoid expensive recalibration with each new observation
+
+
+## 7. Validation Summary {#sec-summary}
 
 ### Test Suite Results
 
-The test suite consists of 6 structured test modules that comprehensively validate the package:
+The test suite consists of 7 structured test modules that comprehensively validate the package:
 
 | Test Script | Status | Time | Description |
 |:-----------|:-------|:-----|:-----------|
@@ -286,16 +375,17 @@ The test suite consists of 6 structured test modules that comprehensively valida
 | `04_spei_calculation.py` | PASS | 823.6s | SPEI with pre-computed PET, Thornthwaite, Hargreaves |
 | `05_spi_spei_comparison.py` | PASS | 17.7s | SPI vs SPEI correlation, drought detection comparison |
 | `06_visualization.py` | PASS | 147.7s | 25 visualization outputs including advanced analytics |
+| `07_operational_mode.py` | PASS | ~120s | Parameter save/load, operational consistency validation |
 
-: Test suite results. All 6 tests pass with the TerraClimate Bali dataset (total runtime: ~21 minutes). {#tbl-test-results}
+: Test suite results. All 7 tests pass with the TerraClimate Bali dataset (total runtime: ~23 minutes). {#tbl-test-results}
 
 ### Output Summary
 
 The test suite generates comprehensive outputs:
 
-- **NetCDF files**: 26 files (SPI/SPEI at multiple scales and distributions)
-- **Plot files**: 25 visualizations (time series, spatial maps, advanced analytics)
-- **Report files**: 5 text reports with detailed statistics
+- **NetCDF files**: 34 files (SPI/SPEI indices + saved parameters)
+- **Plot files**: 28 visualizations (time series, spatial maps, advanced analytics, operational mode)
+- **Report files**: 6 text reports with detailed statistics
 
 ### Distribution Fitting Quality
 
@@ -322,6 +412,8 @@ The test suite generates comprehensive outputs:
 6. **Decadal trends** can be analyzed to assess long-term changes in drought frequency and intensity.
 
 7. **Advanced visualizations** (seasonal heatmaps, climate stripes, exceedance probability) provide intuitive tools for communication and risk assessment.
+
+8. **Operational mode works perfectly** — parameter save/load produces results identical to fresh calculations across all configurations (SPI/SPEI × scales × distributions).
 
 ---
 

@@ -154,7 +154,7 @@ Regional subsets (country-level) complete in seconds to minutes.
 
 ## Validation Results
 
-All distributions tested against TerraClimate Bali data (1958–2024). Cross-distribution correlation exceeds 0.98. The test suite generates **25 visualizations** including advanced analytics.
+All distributions tested against TerraClimate Bali data (1958–2024). Cross-distribution correlation exceeds 0.98. The test suite generates **28 visualizations** including advanced analytics and operational mode validation.
 
 ::: {.panel-tabset}
 ### Multi-Scale SPI
@@ -204,6 +204,12 @@ Climate stripes visualization showing annual drought conditions from 1959-2024. 
 ![](images/exceedance_probability.png)
 
 Risk assessment plot showing probability of exceeding drought thresholds with return period annotations.
+
+### Operational Mode
+
+![](images/operational_mode_workflow.png)
+
+Parameter persistence for real-time monitoring: calibrate once on historical data, apply consistently to new observations. Results are identical to fresh calculations.
 :::
 
 See [Validation & Test Results](technical/validation.qmd) for detailed analysis.
