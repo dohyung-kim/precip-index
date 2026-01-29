@@ -40,7 +40,7 @@ All distributions are implemented in the `distributions` module with a unified A
 
 - Used in the original SPEI R package by Begueria & Vicente-Serrano
 - Good tail behavior for extreme events
-- Two-parameter (alpha, beta) with closed-form L-moments estimators
+- Two-parameter (alpha, beta) fitted via Maximum Likelihood Estimation (MLE)
 - Computationally efficient
 
 **GEV (Generalized Extreme Value)**
@@ -110,7 +110,7 @@ $$
 - loc: location (mean)
 - scale: standard deviation
 
-**Estimation:** L-moments method for improved robustness with small samples.
+**Estimation:** Method of Moments using sample mean, variance, and skewness. This approach is computationally efficient and well-suited for the water balance data typically used with SPEI.
 
 ### Log-Logistic Distribution
 
@@ -125,11 +125,7 @@ $$
 - $\alpha$ (scale) > 0
 - $\beta$ (shape) > 0
 
-**Estimation:** L-moments with closed-form solutions:
-
-$$
-\beta = \frac{2\lambda_2 - \lambda_1}{\lambda_1 - 2\lambda_2} \cdot \frac{\Gamma(1+1/\beta)\Gamma(1-1/\beta)}{\lambda_1}
-$$
+**Estimation:** Maximum Likelihood Estimation (MLE) using SciPy's `fisk` distribution. MLE provides asymptotically efficient parameter estimates for this distribution.
 
 ### Generalized Extreme Value (GEV)
 
@@ -187,29 +183,43 @@ This ensures that:
 
 ## Fitting Methods
 
-The package supports three parameter estimation methods:
+The package supports three parameter estimation methods, with each distribution having a recommended default:
 
-### Method of Moments
+### Method of Moments (Default for Gamma, Pearson III)
 
 - **Speed:** Fast
-- **Used for:** Gamma distribution (default fast path)
-- **Approach:** Match sample moments (mean, variance) to distribution parameters
-- **Limitation:** Can be sensitive to outliers
+- **Used for:** Gamma distribution, Pearson Type III
+- **Approach:** Match sample moments (mean, variance, skewness) to distribution parameters
+- **Implementation:**
+  - Gamma: Thom (1958) approximation using log-transformed data
+  - Pearson III: Direct calculation from sample moments
+- **Advantage:** Computationally efficient, well-suited for large gridded datasets
 
-### L-Moments
+### Maximum Likelihood Estimation (Default for Log-Logistic)
+
+- **Speed:** Moderate (iterative optimization)
+- **Used for:** Log-Logistic distribution
+- **Approach:** Maximize the log-likelihood function
+- **Implementation:** SciPy's optimized `fisk.fit()` method
+- **Advantage:** Asymptotically efficient (optimal for large samples)
+
+### L-Moments (Default for GEV, Generalized Logistic)
 
 - **Speed:** Moderate
-- **Used for:** Pearson III, Log-Logistic, GEV, Generalized Logistic
+- **Used for:** GEV, Generalized Logistic
 - **Approach:** Use linear combinations of order statistics
-- **Advantage:** More robust than conventional moments, especially for small samples and skewed data
+- **Advantage:** More robust than conventional moments, especially for small samples and extreme value distributions
 - **Reference:** Hosking (1990)
 
-### Maximum Likelihood Estimation (MLE)
+### Default Methods by Distribution
 
-- **Speed:** Slower (iterative optimization)
-- **Used for:** Available as fallback
-- **Approach:** Maximize the log-likelihood function
-- **Advantage:** Asymptotically efficient (optimal for large samples)
+| Distribution | Default Method | Rationale |
+|:------------|:---------------|:----------|
+| Gamma | Method of Moments | Fast, proven approach for precipitation (WMO standard) |
+| Pearson III | Method of Moments | Efficient for water balance data with moderate skewness |
+| Log-Logistic | MLE | Optimal asymptotic properties for this distribution |
+| GEV | L-moments | Robust for extreme value analysis |
+| Generalized Logistic | L-moments | Robust for heavy-tailed data |
 
 ---
 
@@ -217,13 +227,21 @@ The package supports three parameter estimation methods:
 
 The distribution fitting includes several safeguards:
 
-### Fallback Chains
+### Fallback Behavior
 
-If the primary fitting method fails, the system automatically tries alternatives:
+If the primary fitting method produces invalid parameters, the system applies fallback strategies:
 
-1. **L-moments** (primary for non-Gamma)
-2. **Method of Moments** (fallback)
-3. **MLE** (secondary fallback)
+- **Gamma:** Method of Moments with robust handling of edge cases (near-zero variance, extreme values)
+- **Pearson III:** Method of Moments → Normal approximation (skew=0) for degenerate cases
+- **Log-Logistic:** MLE via SciPy's optimizer with parameter bounds
+- **GEV:** L-moments with polynomial approximations for shape parameter
+- **Generalized Logistic:** L-moments with bounded parameter estimates
+
+::: {.callout-note}
+## L-moments Available but Not Default
+
+The package includes L-moments implementations for all distributions, which can be explicitly requested via `method=FittingMethod.LMOMENTS`. However, Method of Moments is the default for Gamma and Pearson III because it is faster and performs well for typical climate data.
+:::
 
 ### Parameter Bounding
 
