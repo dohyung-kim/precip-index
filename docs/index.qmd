@@ -166,6 +166,14 @@ WMO 11-category drought/wet classification. CF-compliant NetCDF output. Run theo
 
 ---
 
+## Global Output
+
+![SPI-12 computed from CHIRPS v3 global (0.05°) — December 2025](images/global-spi12-202512.png)
+
+SPI-12 (Gamma) calculated from **CHIRPS v3 global** at 0.05° resolution.
+
+---
+
 ## Validation Results
 
 All distributions tested against TerraClimate Bali data (1958–2024). Cross-distribution correlation exceeds 0.98. The test suite generates **28 visualizations** including advanced analytics and operational mode validation.
