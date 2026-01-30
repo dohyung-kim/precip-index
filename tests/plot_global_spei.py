@@ -1,18 +1,18 @@
 """
-Plot Global SPI-12 Map
+Plot Global SPEI-12 Map
 
-Standalone script to visualize global SPI-12 output from CHIRPS v3 data.
+Standalone script to visualize global SPEI-12 output from TerraClimate data.
 Produces a publication-ready map with WMO 11-category classification,
 equal-area projection, and country boundaries.
 
 Usage:
-    python tests/plot_global_spi.py
+    python tests/plot_global_spei.py
 
 Input:
-    global/output/netcdf/wld_cli_chirps3_d3_spi_gamma_12_month.nc
+    global/output/netcdf/wld_cli_terraclimate_spei_pearson3_12_month.nc
 
 Output:
-    docs/images/global-spi12-202512.png
+    docs/images/global-spei12-202412.png
 """
 
 import sys
@@ -37,14 +37,18 @@ from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
 # Input / output paths
 BASE_DIR = Path(__file__).parent.parent
-INPUT_FILE = BASE_DIR / 'global' / 'output' / 'netcdf' / 'wld_cli_chirps3_d3_spi_gamma_12_month.nc'
-OUTPUT_FILE = BASE_DIR / 'docs' / 'images' / 'global-spi12-202412.png'
+INPUT_FILE = BASE_DIR / 'global' / 'output' / 'netcdf' / 'wld_cli_terraclimate_spei_pearson3_12_month.nc'
+OUTPUT_FILE = BASE_DIR / 'docs' / 'images' / 'global-spei12-202412.png'
 
 # Time slice to plot
-TARGET_DATE = '2024-12-21'
+TARGET_DATE = '2024-12-01'
 
 # Variable name in the NetCDF
-VAR_NAME = 'spi_gamma_12_month'
+VAR_NAME = 'spei_pearson3_12_month'
+
+# Index label (used in titles and colorbar)
+INDEX_LABEL = 'Standardized Precipitation Evapotranspiration Index (Pearson III), 12-month'
+DATA_SOURCE = 'Data: TerraClimate'
 
 # Map settings
 PROJECTION = ccrs.EqualEarth()        # Equal-area projection
@@ -53,7 +57,7 @@ FIGSIZE = (12, 8)
 DPI = 200
 
 # ============================================================================
-# WMO 11-Category SPI Classification
+# WMO 11-Category Classification
 # ============================================================================
 
 # Boundaries for 11 categories
@@ -97,7 +101,7 @@ def build_colormap():
 
 
 def load_data(filepath: Path, target_date: str, var_name: str) -> xr.DataArray:
-    """Load a single time slice from the global SPI NetCDF."""
+    """Load a single time slice from the global SPEI NetCDF."""
     print(f"Opening: {filepath.name}")
     print(f"  (file size: {filepath.stat().st_size / 1e9:.1f} GB)")
 
@@ -109,7 +113,7 @@ def load_data(filepath: Path, target_date: str, var_name: str) -> xr.DataArray:
     actual_time = str(da.time.values)[:10]
     print(f"  Selected time: {actual_time}")
 
-    # Load into memory (single time slice: ~65 MB for float32 2400x7200)
+    # Load into memory (single time slice)
     print(f"  Loading data slice ({da.shape[0]} x {da.shape[1]}) ...")
     da = da.load()
     ds.close()
@@ -121,8 +125,8 @@ def load_data(filepath: Path, target_date: str, var_name: str) -> xr.DataArray:
     return da
 
 
-def plot_global_spi(da: xr.DataArray, output_path: Path):
-    """Create publication-ready global SPI map."""
+def plot_global_spei(da: xr.DataArray, output_path: Path):
+    """Create publication-ready global SPEI map."""
     print("\nCreating map ...")
 
     cmap, norm = build_colormap()
@@ -135,7 +139,7 @@ def plot_global_spi(da: xr.DataArray, output_path: Path):
     ax.set_global()
     ax.set_facecolor('#d9d9d9')  # Light gray for ocean/background
 
-    # Plot SPI data
+    # Plot SPEI data
     im = ax.pcolormesh(
         da.lon.values, da.lat.values, da.values,
         transform=DATA_CRS,
@@ -178,7 +182,7 @@ def plot_global_spi(da: xr.DataArray, output_path: Path):
     # Title and subtitle with clear spacing
     date_label = f"{da.time.dt.strftime('%B %Y').values}"
     fig.text(
-        0.5, 0.97, 'Standardized Precipitation Index (Gamma), 12-month',
+        0.5, 0.97, INDEX_LABEL,
         ha='center', va='top',
         fontsize=14, fontweight='bold',
     )
@@ -202,23 +206,22 @@ def plot_global_spi(da: xr.DataArray, output_path: Path):
         fontsize=7,
     )
     cbar.ax.set_xlabel(
-        'Standardized Precipitation Index (Gamma), 12-month',
+        INDEX_LABEL,
         fontsize=9, labelpad=6,
     )
 
     # Category labels above each color segment — use data coordinates on cbar axis
-    # BoundaryNorm maps N colors to N+1 boundaries, colorbar x-axis matches data values
     label_fontsize = 5.5
 
     for i, label in enumerate(SPI_LABELS):
-        # Midpoint in SPI data space — the colorbar x-axis IS in data space
+        # Midpoint in data space — the colorbar x-axis IS in data space
         mid = (SPI_BOUNDS[i] + SPI_BOUNDS[i + 1]) / 2.0
         cbar.ax.text(mid, 1.3, label, transform=cbar.ax.get_xaxis_transform(),
                      ha='center', va='bottom',
                      fontsize=label_fontsize, color='#404040')
 
     # Attribution text
-    fig.text(0.02, 0.02, 'Data: CHIRPS v3', fontsize=8, color='#606060',
+    fig.text(0.02, 0.02, DATA_SOURCE, fontsize=8, color='#606060',
              ha='left', va='bottom')
     fig.text(0.98, 0.02, 'GOST/DEC Data Group/WBG', fontsize=8, color='#606060',
              ha='right', va='bottom')
@@ -234,7 +237,7 @@ def plot_global_spi(da: xr.DataArray, output_path: Path):
 def main():
     """Main entry point."""
     print("=" * 60)
-    print(" GLOBAL SPI-12 MAP — DECEMBER 2024")
+    print(" GLOBAL SPEI-12 MAP — DECEMBER 2024")
     print("=" * 60)
 
     # Check input exists
@@ -249,7 +252,7 @@ def main():
     da = load_data(INPUT_FILE, TARGET_DATE, VAR_NAME)
 
     # Plot
-    plot_global_spi(da, OUTPUT_FILE)
+    plot_global_spei(da, OUTPUT_FILE)
 
     print("\nDone!")
 
