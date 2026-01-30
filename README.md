@@ -1,7 +1,6 @@
 # Precipitation Index - SPI & SPEI for Climate Extremes Monitoring
 
-<img src="./docs/images/logo-white-background.jpg" alt="PRECIP-INDEX Logo" width="200" height="200">
-</br>
+<img src="./docs/images/logo-white-background.jpg" alt="PRECIP-INDEX Logo" width="300" height="300">
 </br>
 
 **precip-index** is a lightweight set of Python scripts for calculating precipitation-based climate indices (SPI and SPEI) and analyzing **dry and wet extremes** using **run theory**, designed for gridded `xarray` workflows.  
