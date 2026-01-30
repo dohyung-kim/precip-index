@@ -488,14 +488,33 @@ jupyter>=1.0.0      # Notebook support
 | Annual statistics | 165×244, 10 years | 5 min | 300 MB |
 | Plot generation | Single location | 2 sec | 50 MB |
 
-### Global-Scale Processing (Server: 40 cores, 150 GB RAM)
+### Global-Scale Processing (Workstation: 128 GB RAM)
 
-| Operation | Grid Size | Time | Memory |
-|-----------|-----------|------|--------|
-| SPI-12 (chunked) | 2160×4320×528 | ~2 hours | ~16 GB |
-| SPEI-12 (chunked) | 2160×4320×528 | ~3 hours | ~20 GB |
-| Memory estimation | Any size | <1 sec | <100 MB |
-| Chunk iteration | 2160×4320 | <1 sec | <100 MB |
+| Operation | Dataset | Grid Size | Time Steps | Chunks | Total Time |
+|-----------|---------|-----------|------------|--------|------------|
+| SPI-12 (Gamma) | CHIRPS v3 (0.05°) | 2400 × 7200 (17.3M cells) | 539 months | 12 | **~2h 47m** |
+| SPEI-12 (Pearson III) | TerraClimate (0.04°) | 4320 × 8640 (37.3M cells) | 804 months | 32 | **~26h** |
+
+### Why Does TerraClimate SPEI Take ~9.5× Longer?
+
+The difference comes from compounding factors across every dimension:
+
+| Factor | CHIRPS SPI-12 | TerraClimate SPEI-12 | Impact |
+|--------|--------------|---------------------|--------|
+| **Grid cells** | 17.3M | 37.3M | 2.2× more cells |
+| **Time steps** | 539 months (1981–2025) | 804 months (1958–2024) | 1.5× longer series |
+| **Dataset size** | ~69 GB | ~224 GB | 3.2× more I/O |
+| **Distribution** | Gamma (Method of Moments) | Pearson III (MLE) | ~2× slower fitting |
+| **Extra computation** | — | PET calculation | Additional overhead |
+| **Spatial chunks** | 12 | 32 | 2.7× more I/O cycles |
+
+**Key takeaway:** Gamma fitting uses a closed-form Method of Moments solution (fast), while Pearson III uses iterative Maximum Likelihood Estimation (slower per cell). Combined with 2× more grid cells and 1.5× longer time series, the total work scales roughly as 2.2 × 1.5 × 2 ≈ 6.6×. Add the I/O overhead of 32 chunks (each requiring a full read/write cycle) and PET computation, and the ~9.5× ratio is expected.
+
+::: {.callout-tip}
+## Regional Processing Is Fast
+
+These benchmarks are for **global-scale** datasets. Country or regional subsets (e.g., Indonesia, East Africa) typically complete in **seconds to minutes** on a standard laptop with 16 GB RAM.
+:::
 
 ### Chunk Size vs. Performance Trade-offs
 

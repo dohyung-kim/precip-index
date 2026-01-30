@@ -149,13 +149,12 @@ Calibrate distribution parameters on historical data, save them as NetCDF, and a
 ::: {.callout-tip}
 ## Global-Scale Performance
 
-Benchmarked on **CHIRPS v3 global** (0.05° resolution):
+Benchmarked on a workstation with 128 GB RAM:
 
-- **Dataset:** 2400 × 7200 grid (17.3M cells), 539 months, ~69 GB
-- **Processing:** 12 spatial chunks, SPI-12 with Gamma distribution
-- **Total time:** ~2 hours 47 minutes on a workstation with 128 GB RAM
+- **CHIRPS v3 SPI-12** (0.05°, 17.3M cells, 539 months, ~69 GB) — **~2h 47m** with Gamma distribution, 12 spatial chunks
+- **TerraClimate SPEI-12** (0.04°, 37.3M cells, 804 months, ~224 GB) — **~26h** with Pearson III distribution, 32 spatial chunks
 
-Regional subsets (country-level) complete in seconds to minutes. Memory-efficient spatial tiling means you don't need a supercomputer.
+Regional subsets (country-level) complete in seconds to minutes. Memory-efficient spatial tiling means you don't need a supercomputer. See [Performance Benchmarks](technical/implementation.qmd#performance-benchmarks) for detailed comparison.
 :::
 
 ::: {.callout-important}
