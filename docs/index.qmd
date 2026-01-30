@@ -48,7 +48,7 @@ A minimal, efficient Python implementation of **Standardized Precipitation Index
 :::
 
 ::: {.feature-card}
-### Multi-Distribution Support
+### Multi-Distribution Fitting
 
 - **Gamma** — Standard for SPI
 - **Pearson III** — Recommended for SPEI
@@ -61,8 +61,17 @@ A minimal, efficient Python implementation of **Standardized Precipitation Index
 
 - Event identification & characterization
 - Duration, magnitude, intensity, peak
-- Time-series monitoring
-- Gridded period statistics
+- Time-series and gridded analysis
+- Period statistics for spatial patterns
+:::
+
+::: {.feature-card}
+### Operational Mode
+
+- **Save** fitted distribution parameters
+- **Load** and apply to new data without refitting
+- Production monitoring workflows
+- Validated identical to fresh calculations
 :::
 
 ::: {.feature-card}
@@ -73,20 +82,14 @@ A minimal, efficient Python implementation of **Standardized Precipitation Index
 - Automatic memory estimation
 - Streaming I/O for large datasets
 :::
-
-::: {.feature-card}
-### Visualization Suite
-
-- Time series with event highlighting
-- 11-category WMO classification
-- Spatial maps of event characteristics
-- Distribution comparison charts
-:::
 :::
 
 ---
 
 ## Quick Example
+
+::: {.panel-tabset}
+### Basic Usage
 
 ```python
 import xarray as xr
@@ -103,39 +106,44 @@ spi_12 = spi(precip, scale=12)
 # Or use different distributions
 spi_12_p3 = spi(precip, scale=12, distribution='pearson3')
 
-# Identify drought events
+# Identify drought events using run theory
 events = identify_events(spi_12.isel(lat=0, lon=0), threshold=-1.2)
 
 # Visualize
 plot_index(spi_12.isel(lat=0, lon=0), threshold=-1.2)
 ```
 
+### Operational Mode
+
+```python
+from indices import spi, save_fitting_params, load_fitting_params
+
+# Step 1: Calibrate on historical data and get parameters
+spi_hist, params = spi(precip_historical, scale=12, return_params=True)
+
+# Step 2: Save parameters for future use
+save_fitting_params(params, 'spi12_gamma_params.nc',
+                    scale=12, periodicity='monthly',
+                    distribution='gamma',
+                    coords={'lat': precip.lat.values,
+                            'lon': precip.lon.values})
+
+# Step 3: Later — load params and apply to new data (no refitting)
+loaded = load_fitting_params('spi12_gamma_params.nc',
+                             scale=12, periodicity='monthly',
+                             distribution='gamma')
+spi_new = spi(precip_new, scale=12, fitting_params=loaded)
+```
+:::
+
 ---
 
-## What Makes This Package Different?
+## Why precip-index?
 
 ::: {.callout-note}
-## Bidirectional by Design
+## Production-Ready Monitoring
 
-Unlike traditional drought-only tools, **precip-index** treats dry and wet extremes equally. Use negative thresholds for droughts, positive thresholds for floods — same functions, same methodology.
-:::
-
-::: {.callout-tip}
-## Multi-Distribution Fitting
-
-Choose the probability distribution that best fits your data. Gamma, Pearson III, and Log-Logistic each use their optimal fitting method — validated to produce correct SPI/SPEI across all grid cells.
-:::
-
-::: {.callout-important}
-## Run Theory Framework
-
-Goes beyond simple threshold exceedance. Implements full run theory to characterize event duration, magnitude (cumulative & instantaneous), intensity, and peak values.
-:::
-
-::: {.callout-note}
-## Scalable Architecture
-
-Built for datasets of any size. Small regional grids run in-memory; global datasets (CHIRPS, ERA5, TerraClimate) use chunked processing with automatic spatial tiling and streaming I/O.
+Calibrate distribution parameters on historical data, save them as NetCDF, and apply consistently to new observations — **no refitting needed**. This enables operational drought monitoring workflows where new satellite data is processed the moment it arrives, using the same statistical baseline every time. Validated to produce results identical to fresh calculations.
 :::
 
 ::: {.callout-tip}
@@ -147,7 +155,13 @@ Benchmarked on **CHIRPS v3 global** (0.05° resolution):
 - **Processing:** 12 spatial chunks, SPI-12 with Gamma distribution
 - **Total time:** ~2 hours 47 minutes on a workstation with 128 GB RAM
 
-Regional subsets (country-level) complete in seconds to minutes.
+Regional subsets (country-level) complete in seconds to minutes. Memory-efficient spatial tiling means you don't need a supercomputer.
+:::
+
+::: {.callout-important}
+## Built on Standards
+
+WMO 11-category drought/wet classification. CF-compliant NetCDF output. Run theory from peer-reviewed hydrology literature. Multiple PET methods (Thornthwaite, Hargreaves) with automatic fallback. Three distribution families each using their optimal fitting method (Method of Moments, MLE, L-moments).
 :::
 
 ---
@@ -281,18 +295,12 @@ Built upon the foundation of [climate-indices](https://github.com/monocongo/clim
 
 ---
 
-## Contributing
+## Contributing & License
 
-We welcome contributions! See our [GitHub repository](https://github.com/bennyistanto/precip-index) for bug reports, feature requests, and pull requests.
-
----
-
-## License
-
-BSD-3-Clause License. See [LICENSE](https://github.com/bennyistanto/precip-index/blob/main/LICENSE) for details.
+We welcome contributions! See our [GitHub repository](https://github.com/bennyistanto/precip-index) for bug reports, feature requests, and pull requests. Licensed under [BSD-3-Clause](https://github.com/bennyistanto/precip-index/blob/main/LICENSE).
 
 ::: {.callout-warning}
 ## Active Development
 
-This package is under active development. Please report issues on [GitHub](https://github.com/bennyistanto/precip-index/issues).
+This package is under active development. APIs may change. Please report issues on [GitHub](https://github.com/bennyistanto/precip-index/issues).
 :::
