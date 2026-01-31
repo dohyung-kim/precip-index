@@ -52,3 +52,48 @@ a:hover {
 .callout {
   background-color: #2a2a2a;
 }
+
+/* Navigation - dark theme */
+.navbar {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Navbar logo - slightly brighter backdrop for dark theme */
+.navbar .navbar-brand img,
+.navbar-logo img {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px;
+  max-height: 48px;
+}
+
+/* Sidebar active link - dark theme */
+.sidebar nav[role=doc-toc] ul > li > a.active {
+  border-left-color: #66b3ff;
+  color: #66b3ff;
+}
+
+/* Feature card heading - dark theme */
+.feature-card h3 {
+  color: #66b3ff;
+}
+
+/* Figures - dark theme */
+figcaption {
+  color: #999;
+}
+
+/* Footer - dark theme */
+.footer {
+  border-top-color: #3a3a3a;
+}
+
+/* Badges - dark theme adjustments */
+.badge-python {
+  background-color: #3388dd;
+}
+
+.badge-status {
+  background-color: #e6ad00;
+  color: #000;
+}

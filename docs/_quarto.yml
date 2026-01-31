@@ -11,6 +11,7 @@ website:
   favicon: images/favicon.png
   site-url: https://bennyistanto.github.io/precip-index
   repo-url: https://github.com/bennyistanto/precip-index
+  repo-actions: [source, issue]
   back-to-top-navigation: true
   page-navigation: true
 
