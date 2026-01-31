@@ -11,6 +11,8 @@ website:
   favicon: images/favicon.png
   site-url: https://bennyistanto.github.io/precip-index
   repo-url: https://github.com/bennyistanto/precip-index
+  back-to-top-navigation: true
+  page-navigation: true
 
   navbar:
     background: primary
@@ -58,7 +60,7 @@ website:
 
   sidebar:
     - title: "Get Started"
-      style: "docked"
+      style: "floating"
       background: light
       contents:
         - get-started/installation.qmd
@@ -68,13 +70,25 @@ website:
         - get-started/examples.qmd
 
     - title: "Tutorials"
+      style: "floating"
+      background: light
       contents:
+        # - section: "Data Preparation"
+        #   contents:
+        #     - tutorials/00-data-preparation.qmd
+        #     - tutorials/00a-chirps.qmd
+        #     - tutorials/00b-terraclimate.qmd
+        #     - tutorials/00c-era5-land.qmd
+        #     - tutorials/00d-imerg.qmd
+        - text: "---"
         - tutorials/01-calculate-spi.qmd
         - tutorials/02-calculate-spei.qmd
         - tutorials/03-event-analysis.qmd
         - tutorials/04-visualization.qmd
 
     - title: "User Guide"
+      style: "floating"
+      background: light
       contents:
         - user-guide/index.qmd
         - text: "---"
@@ -89,6 +103,8 @@ website:
             - user-guide/visualization.qmd
 
     - title: "Technical Documentation"
+      style: "floating"
+      background: light
       contents:
         - technical/index.qmd
         - text: "---"
@@ -100,8 +116,9 @@ website:
         - technical/validation.qmd
 
   page-footer:
+    background: light
     left: |
-      © 2025 Benny Istanto. Licensed under [BSD-3-Clause](https://opensource.org/licenses/BSD-3-Clause)
+      © 2026 Benny Istanto. Licensed under [BSD-3-Clause](https://opensource.org/licenses/BSD-3-Clause)
     center: |
       Built with [Quarto](https://quarto.org/)
     right:
@@ -128,7 +145,7 @@ format:
     smooth-scroll: true
     fig-width: 8
     fig-height: 6
-    fig-dpi: 150
+    fig-dpi: 300
 
 execute:
   freeze: auto
