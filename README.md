@@ -1,93 +1,221 @@
-# Precipitation Index - SPI & SPEI for Climate Extremes Monitoring
+# GPU-Accelerated SPI & SPEI from TerraClimate
 
-<img src="./docs/images/logo-white-background.jpg" alt="PRECIP-INDEX Logo" width="300" height="300">
-</br>
+Global drought and wetness indices — Standardized Precipitation Index (SPI) and Standardized Precipitation-Evapotranspiration Index (SPEI) — computed from TerraClimate data using GPU-accelerated processing.
 
-**precip-index** is a Python toolkit for calculating precipitation-based climate indices (SPI and SPEI) and analyzing **dry and wet extremes** using **run theory**, designed for gridded `xarray` workflows at global scale.
+---
 
-📚 Documentation: https://bennyistanto.github.io/precip-index/
+## What are SPI and SPEI?
 
-## This Fork: GPU Acceleration + Global Pipeline
+**SPI (Standardized Precipitation Index)** measures precipitation anomalies relative to a long-term climatology. It uses only precipitation as input, fitted to a gamma distribution, and is standardized to a normal distribution so that values are comparable across locations and time scales.
 
-This repository adapts the original [World Bank precip-index](https://github.com/bennyistanto/precip-index) to run efficiently on GPU hardware for global-scale TerraClimate datasets, and adds a probability layer output and validation workflow.
+**SPEI (Standardized Precipitation-Evapotranspiration Index)** extends SPI by incorporating the demand side of the water balance. It uses precipitation minus potential evapotranspiration (P − PET) as input, fitted to a Pearson Type III distribution. SPEI captures the effect of rising temperatures on drought severity — a dry period that was tolerable historically may become more severe drought when temperatures are higher.
 
-**What was added on top of the original code:**
+Both indices use the same classification:
 
-| Component | File | Description |
-|-----------|------|-------------|
-| GPU acceleration | `src/gpu.py` | CuPy-based GPU replacements for rolling sum, gamma fitting, and normal transform — all three bottlenecks in SPI/SPEI computation |
-| GPU-enabled compute | `src/compute.py`, `src/indices.py`, `src/chunked.py` | Modified to call GPU functions when CuPy is available, with transparent CPU fallback |
-| Data download | `download_terraclimate.py` | Download and validate TerraClimate per-year NetCDF files (ppt, pet, tmax, tmin) with resume support |
-| Zarr conversion | `convert_to_zarr.py` | Convert per-year NetCDF files to Zarr stores for fast chunked I/O |
-| Global SPI/SPEI runner | `run_spi.py`, `run_spei.py` | End-to-end pipeline: reads Zarr or NetCDF, computes SPI/SPEI in GPU-accelerated spatial chunks, writes CF-compliant NetCDF |
-| Probability layer | `compute_prob_geotiff.py` | Computes per-pixel exceedance probabilities (P(SPI ≤ -1.0/-1.5/-2.0)) and data quality flags from full time series; writes 4-band Cloud-Optimised GeoTIFF |
-| Validation | `compare_bali_old_data.py` | Compares new GPU-computed SPI/SPEI against original author's Bali reference output (correlation, RMSE, bias maps) |
-| Colab notebook | `colab/SPI_colab.ipynb` | End-to-end SPI pipeline running on Google Colab A100 GPU |
-| Colab validation | `colab/compare_bali_old_data.ipynb` | Interactive comparison of Colab output against reference data |
+| Value | Category |
+|-------|----------|
+| ≥ 2.0 | Extremely wet |
+| 1.5 to 1.99 | Very wet |
+| 1.0 to 1.49 | Moderately wet |
+| −0.99 to 0.99 | Near normal |
+| −1.0 to −1.49 | Moderately dry |
+| −1.5 to −1.99 | Severely dry |
+| ≤ −2.0 | Extremely dry |
 
-## GPU Acceleration
+This repository computes both indices at **12-month time scale** (SPI-12, SPEI-12), which reflects long-term moisture conditions and is most relevant for agricultural drought, groundwater, and streamflow impacts.
 
-The three computationally intensive steps are accelerated with [CuPy](https://cupy.dev/):
+---
 
-- **Rolling sum** (`rolling_sum_3d_gpu`): cumsum-based O(n) algorithm, replaces a sliding window on CPU
-- **Gamma parameter fitting** (`compute_gamma_params_gpu`): method-of-moments fitting for all grid cells simultaneously per calendar period
-- **Normal transform** (`transform_to_normal_gpu`): gamma CDF via `cupyx.scipy.special.gammainc` + inverse-normal via `ndtri`, all on GPU
+## Input Data
 
-Processing is done in spatial chunks (via `ChunkedProcessor`) so each chunk fits in GPU VRAM. Tested with 16 GB VRAM on global TerraClimate (4320 × 8640 grid, 1958–2025).
+**Source:** [TerraClimate](https://www.climatologylab.org/terraclimate.html) — a high-resolution global dataset of monthly climate variables.
 
-CuPy is optional — if not installed or no CUDA device is found, all functions fall back to the CPU path transparently.
+| Parameter | Value |
+|-----------|-------|
+| Spatial resolution | 0.0417° (~4.6 km at equator) |
+| Grid size | 4,320 × 8,640 pixels |
+| Time period | January 1958 – December 2025 (67 years, 804 monthly time steps) |
+| Calibration period | 1991–2020 (WMO standard) |
+| Variables used | `ppt` (precipitation, mm) for SPI; `ppt` + `pet` (potential evapotranspiration, mm) for SPEI |
+| Distribution | Gamma (SPI), Pearson Type III (SPEI) |
+| Source URL | https://climate.northwestknowledge.net/TERRACLIMATE-DATA |
+
+---
+
+## Results on Google Earth Engine
+
+The computed SPI-12 and SPEI-12 are published as assets on Google Earth Engine under the UNICEF CCRI project.
+
+### SPI-12
+
+**Asset:** `projects/unicef-ccri/assets/droughts/spi12_TerraClimate_1958-2025`
+
+```javascript
+var spi12 = ee.ImageCollection('projects/unicef-ccri/assets/droughts/spi12_TerraClimate_1958-2025');
+```
+
+### SPEI-12
+
+**Asset:** `projects/unicef-ccri/assets/droughts/spei12_TerraClimate_1958-2025`
+
+```javascript
+var spei12 = ee.ImageCollection('projects/unicef-ccri/assets/droughts/spei12_TerraClimate_1958-2025');
+```
+
+### Band information
+
+Each image in the collection represents one month. The index value is stored as a float32 band:
+
+| Band | Name | Description | Range |
+|------|------|-------------|-------|
+| 1 | `spi_gamma_12_month` / `spei_gamma_12_month` | Standardized index value | −3.09 to 3.09 |
+
+Negative values indicate drought (dry conditions), positive values indicate wet conditions. Pixels over ocean and permanent ice are masked (NoData).
+
+### Example GEE code
+
+```javascript
+// Load SPI-12 ImageCollection
+var spi12 = ee.ImageCollection('projects/unicef-ccri/assets/droughts/spi12_TerraClimate_1958-2025');
+
+// Filter to a specific month (e.g. December 2023)
+var spi_dec2023 = spi12.filterDate('2023-12-01', '2024-01-01').first();
+
+// Visualize
+Map.addLayer(spi_dec2023, {
+  bands: ['spi_gamma_12_month'],
+  min: -2.5,
+  max: 2.5,
+  palette: ['8B1A1A', 'DE2929', 'F3641D', 'FDC404', 'FFFFFF', '89CDFF', '2C7BB6', '1A3399']
+}, 'SPI-12 Dec 2023');
+
+// Extract drought area (SPI <= -1.0)
+var drought = spi_dec2023.lte(-1.0);
+```
+
+---
 
 ## Pipeline
 
 ```
-1. Download data
-   python download_terraclimate.py --vars ppt pet
+Step 1 — Download data
+    python download_terraclimate.py --vars ppt pet
 
-2. Convert to Zarr (fast I/O)
-   python convert_to_zarr.py
+Step 2 — Process (Colab notebook)
+    notebooks/01_compute_SPI_SPEI.ipynb
 
-3. Compute SPI / SPEI
-   python run_spi.py
-   python run_spei.py
-
-4. Compute probability layer (GeoTIFF)
-   python compute_prob_geotiff.py
-
-5. Validate against reference
-   python compare_bali_old_data.py
+Step 3 — Validate (Colab notebook)
+    notebooks/02_validation.ipynb
 ```
 
-## Key Features
+### Step 1: Download
 
-- **SPI / SPEI** at 1, 3, 6, 12, 24-month scales (xarray + CF-compliant NetCDF outputs)
-- **GPU-accelerated** computation via CuPy (falls back to CPU automatically)
-- **Bidirectional extremes**: drought (dry) and flood-prone (wet) conditions in one framework
-- **Multi-distribution fitting**: Gamma, Pearson Type III, Log-Logistic
-- **Run theory events**: duration, magnitude, intensity, peak, interarrival + gridded summaries
-- **Operational mode**: save fitted parameters, load and apply to new data without refitting
-- **Scalable processing**: chunked tiling, memory estimation, streaming I/O for global datasets
-- **Probability layers**: exceedance probabilities and quality flags as Cloud-Optimised GeoTIFF
-- **Validation tools**: pixel-level statistics and bias maps against reference datasets
+`download_terraclimate.py` downloads TerraClimate per-year NetCDF files from the official server with validation and resume support:
 
-## Hardware Requirements
+```bash
+python download_terraclimate.py               # ppt + pet (default)
+python download_terraclimate.py --vars ppt    # ppt only (SPI only)
+python download_terraclimate.py --years 2020 2025  # specific year range
+```
 
-- CPU-only: any machine with ≥ 8 GB RAM
-- GPU mode: CUDA-capable GPU with ≥ 8 GB VRAM (tested: 16 GB); CUDA 11+ with CuPy installed
+Alternatively, use the bundled wget script for bulk download:
 
-## Global Output
+```bash
+bash input/terraclimate_wget.sh
+```
 
-SPI-12 (Gamma) calculated from **TerraClimate** at 0.0417° (~4 km) resolution — December 2025.
+### Step 2: Compute SPI & SPEI
 
-![SPI-12 computed from global TerraClimate dataset (0.0417° ~ 4km) — December 2025](./docs/images/global-spi12-202512.png)
+Open `notebooks/01_compute_SPI_SPEI.ipynb` in Google Colab. The notebook handles the full pipeline:
 
-SPEI-12 (Pearson III) calculated from **TerraClimate** at 0.0417° (~4 km) resolution — December 2024.
+1. Mount Google Drive and restore cached files
+2. Download TerraClimate data (ppt, pet) with Drive caching
+3. Convert to Zarr for fast I/O
+4. Compute SPI-12 and SPEI-12 using GPU (CuPy on A100)
+5. Generate probability layers and quality flags as Cloud-Optimised GeoTIFF
+6. Save all outputs to Google Drive
 
-![SPEI-12 computed from global TerraClimate dataset (0.0417° ~ 4km) — December 2024](./docs/images/global-spei12-202412.png)
+**Runtime:** Select `Runtime → Change runtime type → A100 GPU`
+
+### Step 3: Validate
+
+Open `notebooks/02_validation.ipynb` to verify the algorithm produces correct results by comparing the GPU output against the original author's reference output on the same Bali input data.
+
+---
+
+## GPU Acceleration
+
+The three computationally intensive operations are accelerated with [CuPy](https://cupy.dev/) (CUDA-based drop-in replacement for NumPy):
+
+| Operation | CPU approach | GPU approach |
+|-----------|-------------|-------------|
+| Rolling sum | Sliding window over time axis | Cumulative-sum trick on GPU |
+| Gamma parameter fitting | Loop over calendar months | Parallel method-of-moments for all pixels simultaneously |
+| Normal transform | `scipy.stats.gamma.cdf` + `norm.ppf` | `cupyx.scipy.special.gammainc` + `ndtri` |
+
+Processing is done in spatial chunks via `ChunkedProcessor` so each chunk fits in GPU VRAM. Tested with a 16 GB GPU on the full global TerraClimate grid (4,320 × 8,640, 1958–2025).
+
+CuPy is **optional** — if not installed or no CUDA device is found, all functions fall back silently to the CPU path.
+
+---
+
+## Validation
+
+The GPU implementation was validated against the original author's reference outputs on identical input data (Bali subset, TerraClimate ~2022 vintage).
+
+| Index | Correlation | RMSE | Notes |
+|-------|-------------|------|-------|
+| SPI-12 | **1.000000** | **0.000024** | Negligible floating-point rounding only |
+| SPEI-12 | **1.000000** | **0.000024** | Negligible floating-point rounding only |
+
+The differences are entirely due to float32 rounding — the algorithms are numerically identical. See `notebooks/02_validation.ipynb` for the full comparison including scatter plots, spatial bias maps, and per-pixel correlation maps.
+
+---
+
+## Repository Structure
+
+```
+precip-index/
+├── notebooks/
+│   ├── 01_compute_SPI_SPEI.ipynb   # Colab: download + compute + probability layer
+│   └── 02_validation.ipynb          # Colab: compare against original reference output
+│
+├── src/                             # Core library
+│   ├── gpu.py                       # CuPy GPU acceleration (rolling sum, gamma fit, transform)
+│   ├── indices.py                   # spi_global(), spei_global() — top-level functions
+│   ├── compute.py                   # Vectorized SPI/SPEI computation (CPU + GPU paths)
+│   ├── chunked.py                   # Spatial tiling and checkpoint logic
+│   ├── distributions.py             # Distribution fitting (Pearson III, Log-Logistic, etc.)
+│   ├── config.py                    # Central configuration
+│   └── utils.py                     # I/O, logging, array utilities
+│
+├── download_terraclimate.py         # Step 1: Download + validate TerraClimate NetCDF files
+├── convert_to_zarr.py               # Pre-convert NetCDF → Zarr for fast I/O (local GPU runs)
+├── run_spi.py                       # Local GPU: compute SPI on full global data
+├── run_spei.py                      # Local GPU: compute SPEI on full global data
+├── compute_prob_geotiff.py          # Generate probability layer GeoTIFF from SPI output
+├── compare_bali_old_data.py         # Validation: compare outputs against original reference
+├── patch_spi_missing.py             # Utility: patch missing lat rows from interrupted runs
+├── test_zarr.py                     # Benchmark: compare NetCDF vs Zarr I/O performance
+│
+├── tests/
+│   ├── terraclimate_bali_ppt_1958_2024.nc   # Reference precipitation data (Bali subset)
+│   └── terraclimate_bali_pet_1958_2024.nc   # Reference PET data (Bali subset)
+│
+├── input/
+│   └── terraclimate_wget.sh         # Bulk wget download script
+│
+├── requirements.txt
+├── LICENSE
+└── README.md
+```
+
+---
 
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/precip-index.git
+git clone https://github.com/dohyung-kim/precip-index.git
 cd precip-index
 pip install -r requirements.txt
 
@@ -96,13 +224,24 @@ pip install cupy-cuda12x   # CUDA 12.x
 # pip install cupy-cuda11x # CUDA 11.x
 ```
 
+---
+
 ## Credits
 
-**Benny Istanto**, GOST/DEC Data Group, The World Bank — original precip-index implementation.
+**Original implementation:** [Benny Istanto](https://github.com/bennyistanto), GOST/DEC Data Group, The World Bank.  
+Original repository: [bennyistanto/precip-index](https://github.com/bennyistanto/precip-index)  
+Documentation: https://bennyistanto.github.io/precip-index/
 
-GPU adaptation, global pipeline scripts, probability layer, and validation workflow built on top of the original.
+This repository adapts the original CPU-based SPI/SPEI implementation with:
+- **GPU acceleration** via CuPy for the three bottleneck operations (rolling sum, gamma fitting, normal transform)
+- **Global-scale pipeline** for TerraClimate data (1958–2025, 4320 × 8640 grid)
+- **Probability layer output** as Cloud-Optimised GeoTIFF (exceedance probabilities + quality flags)
+- **Google Colab notebooks** for end-to-end processing on an A100 GPU
+- **Validation notebooks** confirming numerical equivalence with the original algorithm
 
-Built upon the foundation of [climate-indices](https://github.com/monocongo/climate_indices) by James Adams, with substantial additions for multi-distribution support, bidirectional event analysis, operational mode (parameter persistence), and scalable processing.
+Both implementations build on the foundational work of [climate-indices](https://github.com/monocongo/climate_indices) by James Adams.
+
+---
 
 ## License
 
