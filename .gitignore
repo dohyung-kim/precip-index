@@ -123,28 +123,40 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# NetCDF and data files
-# *.nc
-# *.nc4
+# NetCDF and data files (large raw inputs — keep small test fixtures)
+input/*.nc
+input/*.nc4
 *.hdf
 *.h5
 *.grib
 *.grib2
+
+# GeoTIFF outputs (generated, large)
 *.tif
 *.tiff
 *.geotiff
 
-# Output directories
-# input/
+# Output directories (generated data — not source code)
+output/
 global/
-# output/
 results/
 figures/
 temp/
 tmp/
 temp_md/
 temp_ipynb/
-# test_output/
+
+# Zarr stores (generated, very large)
+*.zarr/
+**/*.zarr/
+
+# Test outputs (generated during test runs)
+tests/output/netcdf/
+tests/output/plots/
+tests/output/reports/
+
+# Probability layer cache (intermediate outputs)
+output/geotiff/.cache/
 
 # IDE settings
 .vscode/

@@ -25,7 +25,7 @@ References:
 
 import os
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import xarray as xr
@@ -67,6 +67,7 @@ from utils import (
     ensure_cf_compliant,
     get_data_year_range,
     is_data_valid,
+    open_nc,
 )
 
 # Module logger
@@ -1114,7 +1115,7 @@ def get_drought_area_percentage(
 # =============================================================================
 
 def spi_global(
-    precip_path: str,
+    precip_path: Union[str, List],
     output_path: str,
     scale: int = 12,
     periodicity: Union[str, Periodicity] = Periodicity.monthly,
@@ -1124,7 +1125,9 @@ def spi_global(
     var_name: Optional[str] = None,
     save_params: bool = True,
     distribution: str = DEFAULT_DISTRIBUTION,
-    global_attrs: Optional[Dict] = None
+    global_attrs: Optional[Dict] = None,
+    use_gpu: Optional[bool] = None,
+    callback: Optional[Callable] = None,
 ) -> xr.Dataset:
     """
     Calculate SPI for global-scale datasets with automatic memory management.
@@ -1145,17 +1148,17 @@ def spi_global(
         'gev', 'gen_logistic'). Default: 'gamma'
     :param global_attrs: optional dict of global attributes to override defaults
         (e.g., {'institution': 'My Org', 'source': 'My Project'})
+    :param use_gpu: Enable GPU acceleration for Gamma path (None = auto-detect)
     :return: Dataset with computed SPI
 
     Example:
-        >>> # Process Global CHIRPS data
+        >>> # Per-year TerraClimate files (glob pattern)
         >>> result = spi_global(
-        ...     'chirps_global_monthly_1981_2024.nc',
+        ...     'input/TerraClimate_ppt_*.nc',
         ...     'spi_12_global.nc',
-        ...     scale=12,
-        ...     chunk_size=500  # Adjust based on available RAM
+        ...     scale=12
         ... )
-        >>> # With Pearson III distribution
+        >>> # Single merged file (legacy)
         >>> result = spi_global(
         ...     'chirps_global_monthly_1981_2024.nc',
         ...     'spi_pearson3_12_global.nc',
@@ -1170,7 +1173,8 @@ def spi_global(
 
     processor = ChunkedProcessor(
         chunk_lat=chunk_size,
-        chunk_lon=chunk_size
+        chunk_lon=chunk_size,
+        use_gpu=use_gpu
     )
 
     return processor.compute_spi_chunked(
@@ -1183,13 +1187,14 @@ def spi_global(
         var_name=var_name,
         save_params=save_params,
         distribution=distribution,
-        global_attrs=global_attrs
+        global_attrs=global_attrs,
+        callback=callback,
     )
 
 
 def spei_global(
-    precip_path: str,
-    pet_path: str,
+    precip_path: Union[str, List],
+    pet_path: Union[str, List],
     output_path: str,
     scale: int = 12,
     periodicity: Union[str, Periodicity] = Periodicity.monthly,
@@ -1200,7 +1205,9 @@ def spei_global(
     pet_var_name: Optional[str] = None,
     save_params: bool = True,
     distribution: str = DEFAULT_DISTRIBUTION,
-    global_attrs: Optional[Dict] = None
+    global_attrs: Optional[Dict] = None,
+    use_gpu: Optional[bool] = None,
+    callback: Optional[Callable] = None,
 ) -> xr.Dataset:
     """
     Calculate SPEI for global-scale datasets with automatic memory management.
@@ -1246,7 +1253,8 @@ def spei_global(
 
     processor = ChunkedProcessor(
         chunk_lat=chunk_size,
-        chunk_lon=chunk_size
+        chunk_lon=chunk_size,
+        use_gpu=use_gpu
     )
 
     return processor.compute_spei_chunked(
@@ -1261,7 +1269,8 @@ def spei_global(
         pet_var_name=pet_var_name,
         save_params=save_params,
         distribution=distribution,
-        global_attrs=global_attrs
+        global_attrs=global_attrs,
+        callback=callback,
     )
 
 
@@ -1295,8 +1304,8 @@ def estimate_memory_requirements(
     """
     from chunked import estimate_memory, estimate_memory_from_data
 
-    if isinstance(precip, str):
-        ds = xr.open_dataset(precip)
+    if isinstance(precip, (str, list)):
+        ds = open_nc(precip)
         if var_name is None:
             precip_vars = [v for v in ds.data_vars
                           if any(x in v.lower() for x in PRECIP_VAR_PATTERNS)]

@@ -15,10 +15,12 @@ bidirectional event analysis, and scalable processing.
 """
 
 import calendar
+import glob as _glob_mod
 import logging
 import math
 from datetime import datetime
-from typing import Optional, Tuple, Union
+from pathlib import Path
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import xarray as xr
@@ -34,6 +36,66 @@ from config import (
     Periodicity,
     VAR_NAME_PATTERN,
 )
+
+
+# =============================================================================
+# MULTI-FILE NETCDF LOADER
+# =============================================================================
+
+def open_nc(
+    path: Union[str, Path, List],
+    **kwargs
+) -> xr.Dataset:
+    """
+    Open a NetCDF dataset from a single file, a glob pattern, or a list of files.
+
+    Designed to handle the TerraClimate per-year file layout where each variable
+    is split into annual files (e.g. ``TerraClimate_ppt_1958.nc``, …).
+
+    :param path: one of:
+        - ``str`` / ``Path`` pointing to a single ``.nc`` file
+        - ``str`` glob pattern containing ``*``, ``?``, or ``[`` (e.g.
+          ``'input/TerraClimate_ppt_*.nc'``)
+        - ``list`` / ``tuple`` of file paths (sorted automatically)
+    :param kwargs: extra keyword arguments forwarded to
+        ``xr.open_dataset`` or ``xr.open_mfdataset``
+    :return: xr.Dataset with a continuous time axis
+
+    Examples::
+
+        # Single merged file (legacy)
+        ds = open_nc('input/terraclimate_bali_ppt_1958_2024.nc')
+
+        # Per-year global TerraClimate files
+        ds = open_nc('input/TerraClimate_ppt_*.nc')
+
+        # Explicit list
+        ds = open_nc(['input/TerraClimate_ppt_1958.nc',
+                      'input/TerraClimate_ppt_1959.nc'])
+    """
+    if isinstance(path, (list, tuple)):
+        files = sorted(str(p) for p in path)
+        if not files:
+            raise FileNotFoundError("open_nc received an empty file list")
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='.*separate the stored chunks.*', category=UserWarning)
+            return xr.open_mfdataset(files, combine='by_coords', **kwargs)
+
+    path = str(path)
+
+    # Glob pattern
+    if any(c in path for c in ('*', '?', '[')):
+        files = sorted(_glob_mod.glob(path))
+        if not files:
+            raise FileNotFoundError(f"open_nc: no files match pattern '{path}'")
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='.*separate the stored chunks.*', category=UserWarning)
+            return xr.open_mfdataset(files, combine='by_coords', **kwargs)
+
+    # Single file
+    return xr.open_dataset(path, **kwargs)
 
 
 # =============================================================================

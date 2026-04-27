@@ -23,6 +23,13 @@ import scipy.stats
 import xarray as xr
 from numba import jit, prange
 
+from gpu import (
+    GPU_AVAILABLE,
+    compute_gamma_params_gpu,
+    rolling_sum_3d_gpu,
+    transform_to_normal_gpu,
+)
+
 from config import (
     DEFAULT_DISTRIBUTION,
     DISTRIBUTION_DISPLAY_NAMES,
@@ -450,7 +457,8 @@ def compute_index_parallel(
     periodicity: Periodicity,
     fitting_params: Optional[Dict[str, np.ndarray]] = None,
     memory_efficient: bool = True,
-    distribution: str = DEFAULT_DISTRIBUTION
+    distribution: str = DEFAULT_DISTRIBUTION,
+    use_gpu: Optional[bool] = None
 ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
     """
     Compute SPI/SPEI for 3D gridded data with parallel processing.
@@ -474,6 +482,9 @@ def compute_index_parallel(
     :param memory_efficient: if True, optimize for lower memory usage
     :param distribution: distribution type ('gamma', 'pearson3', 'log_logistic',
         'gev', 'gen_logistic'). Default: 'gamma'
+    :param use_gpu: if True, use CuPy GPU acceleration (gamma path only);
+        if False, force CPU; if None (default), auto-detect from GPU_AVAILABLE.
+        GPU is only applied for the Gamma distribution fast path.
     :return: tuple of (result_array, fitting_params_dict)
     """
     n_time, n_lat, n_lon = data.shape
@@ -483,9 +494,16 @@ def compute_index_parallel(
     n_time_original = n_time  # remember original length before padding
     dist = distribution.lower()
 
+    # Resolve GPU flag
+    _use_gpu = GPU_AVAILABLE if use_gpu is None else bool(use_gpu)
+    if _use_gpu and not GPU_AVAILABLE:
+        _logger.warning("use_gpu=True requested but CuPy not available; falling back to CPU")
+        _use_gpu = False
+
     _logger.info(
         f"Computing index: shape={data.shape}, scale={scale}, "
-        f"distribution={dist}, grid_cells={n_lat * n_lon:,}"
+        f"distribution={dist}, grid_cells={n_lat * n_lon:,}, "
+        f"device={'GPU' if _use_gpu else 'CPU'}"
     )
 
     if remainder:
@@ -511,8 +529,12 @@ def compute_index_parallel(
         # No scaling needed - use data directly (no copy)
         scaled_data = data
     else:
-        # Memory-efficient rolling sum
-        scaled_data = _rolling_sum_3d(data, scale, dtype)
+        # Rolling sum — GPU or CPU
+        if _use_gpu:
+            _logger.info("Step 1/3: Applying temporal scaling (GPU)...")
+            scaled_data = rolling_sum_3d_gpu(data, scale, dtype)
+        else:
+            scaled_data = _rolling_sum_3d(data, scale, dtype)
 
     # Pad to complete years if needed (after scaling, so rolling sum uses real data)
     if remainder:
@@ -540,16 +562,33 @@ def compute_index_parallel(
             probs_zero = fitting_params['prob_zero'].astype(dtype, copy=False)
             _logger.info("Using pre-computed fitting parameters")
         else:
-            alphas, betas, probs_zero = _compute_gamma_params_vectorized(
-                scaled_data, n_years, periods_per_year, n_lat, n_lon,
-                cal_start_idx, cal_end_idx, dtype
-            )
+            if _use_gpu:
+                _logger.info("Step 2/3: Computing gamma parameters (GPU)...")
+                alphas, betas, probs_zero = compute_gamma_params_gpu(
+                    scaled_data, n_years, periods_per_year, n_lat, n_lon,
+                    cal_start_idx, cal_end_idx, dtype,
+                    min_values_for_fit=MIN_VALUES_FOR_GAMMA_FIT
+                )
+            else:
+                alphas, betas, probs_zero = _compute_gamma_params_vectorized(
+                    scaled_data, n_years, periods_per_year, n_lat, n_lon,
+                    cal_start_idx, cal_end_idx, dtype
+                )
 
-        _logger.info("Step 3/3: Transforming to standard normal...")
-        result = _transform_to_normal_vectorized(
-            scaled_data, alphas, betas, probs_zero,
-            n_years, periods_per_year, n_lat, n_lon, dtype
-        )
+        if _use_gpu:
+            _logger.info("Step 3/3: Transforming to standard normal (GPU)...")
+            result = transform_to_normal_gpu(
+                scaled_data, alphas, betas, probs_zero,
+                n_years, periods_per_year, n_lat, n_lon, dtype,
+                valid_min=FITTED_INDEX_VALID_MIN,
+                valid_max=FITTED_INDEX_VALID_MAX
+            )
+        else:
+            _logger.info("Step 3/3: Transforming to standard normal...")
+            result = _transform_to_normal_vectorized(
+                scaled_data, alphas, betas, probs_zero,
+                n_years, periods_per_year, n_lat, n_lon, dtype
+            )
 
         # Prepare fitting parameters dict
         params_dict = {

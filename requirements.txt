@@ -14,10 +14,19 @@ dask[complete]>=2021.10.0
 zarr>=2.10.0
 psutil>=5.8.0
 
-# Optional: Visualization (for notebooks)
+# Geospatial output
+rasterio>=1.3.0
+
+# Visualization (for notebooks and diagnostic plots)
 matplotlib>=3.4.0
 cartopy>=0.20.0
 
-# Optional: Jupyter notebooks
+# Jupyter notebooks
 jupyter>=1.0.0
 ipykernel>=6.0.0
+
+# Optional: GPU acceleration (requires CUDA 11+ and compatible GPU)
+# Install separately — not included in pip install by default:
+#   pip install cupy-cuda12x      # for CUDA 12.x
+#   pip install cupy-cuda11x      # for CUDA 11.x
+# cupy>=12.0.0

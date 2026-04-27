@@ -14,12 +14,18 @@ bidirectional event analysis, and scalable processing.
 """
 
 import gc
+import json
 import os
 import tempfile
+import time
+import warnings
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
 
+import dask.array as da
+import netCDF4 as nc4
 import numpy as np
 import xarray as xr
 
@@ -30,7 +36,7 @@ from config import (
     PRECIP_VAR_PATTERNS,
     SPEI_WATER_BALANCE_OFFSET,
 )
-from utils import get_global_attributes, get_logger
+from utils import get_global_attributes, get_logger, open_nc
 
 _logger = get_logger(__name__)
 
@@ -264,7 +270,8 @@ class ChunkedProcessor:
         chunk_lon: int = 500,
         n_workers: int = None,
         temp_dir: Optional[str] = None,
-        verbose: bool = True
+        verbose: bool = True,
+        use_gpu: Optional[bool] = None
     ):
         """
         Initialize chunked processor.
@@ -274,16 +281,21 @@ class ChunkedProcessor:
         :param n_workers: Number of parallel workers (default: CPU count)
         :param temp_dir: Directory for temporary files
         :param verbose: Print progress information
+        :param use_gpu: Enable GPU acceleration for the Gamma distribution path.
+            ``None`` (default) auto-detects CuPy; ``True`` forces GPU (raises if
+            unavailable); ``False`` forces CPU.
         """
         self.chunk_lat = chunk_lat
         self.chunk_lon = chunk_lon
         self.n_workers = n_workers or os.cpu_count()
         self.temp_dir = temp_dir or tempfile.gettempdir()
         self.verbose = verbose
+        self.use_gpu = use_gpu
 
+        from gpu import GPU_AVAILABLE, gpu_info
         _logger.info(
             f"ChunkedProcessor initialized: chunk_size=({chunk_lat}, {chunk_lon}), "
-            f"workers={self.n_workers}"
+            f"workers={self.n_workers}, {gpu_info()}"
         )
 
     def _log(self, msg: str):
@@ -338,8 +350,8 @@ class ChunkedProcessor:
         # Load data lazily
         self._log(f"Opening data: {precip if isinstance(precip, (str, Path)) else 'xarray object'}")
 
-        if isinstance(precip, (str, Path)):
-            ds = xr.open_dataset(precip, chunks={'time': -1, 'lat': self.chunk_lat, 'lon': self.chunk_lon})
+        if isinstance(precip, (str, Path, list)):
+            ds = open_nc(precip, chunks={'time': 12})
             if var_name is None:
                 # Auto-detect precipitation variable
                 precip_vars = [v for v in ds.data_vars
@@ -407,11 +419,15 @@ class ChunkedProcessor:
         dist = distribution.lower() if isinstance(distribution, str) else 'gamma'
         var_name_out = get_variable_name('spi', scale, periodicity, distribution=dist)
 
-        # Create empty dataset
+        # Create empty dataset — use dask.array.full so we never allocate
+        # the entire output grid in RAM (would be ~100 GB for global data).
         out_ds = xr.Dataset(
             {
                 var_name_out: xr.DataArray(
-                    data=np.full((n_time, n_lat, n_lon), np.nan, dtype=np.float32),
+                    data=da.full(
+                        (n_time, n_lat, n_lon), np.nan, dtype=np.float32,
+                        chunks=(min(12, n_time), chunk_lat, chunk_lon)
+                    ),
                     dims=['time', 'lat', 'lon'],
                     coords=coords,
                     attrs=get_variable_attributes('spi', scale, periodicity, distribution=dist)
@@ -449,64 +465,140 @@ class ChunkedProcessor:
             for pname in param_names:
                 all_params[pname] = np.full((periods, n_lat, n_lon), np.nan, dtype=np.float32)
 
-        # Process chunks
+        # ------------------------------------------------------------------
+        # Checkpoint support: track completed chunk indices so a crash can
+        # resume from where it left off instead of restarting from chunk 0.
+        # ------------------------------------------------------------------
+        checkpoint_path = Path(str(output_path) + '.ckpt')
+
+        def _load_checkpoint() -> Set[int]:
+            if checkpoint_path.exists():
+                try:
+                    return set(json.loads(checkpoint_path.read_text()).get('done', []))
+                except Exception:
+                    return set()
+            return set()
+
+        def _save_checkpoint(done: Set[int]) -> None:
+            try:
+                checkpoint_path.write_text(json.dumps({'done': sorted(done)}))
+            except Exception as e:
+                _logger.warning(f"Could not write checkpoint: {e}")
+
+        completed_chunks = _load_checkpoint()
+        if completed_chunks:
+            self._log(f"Resuming from checkpoint: {len(completed_chunks)} chunks already done")
+
+        # Process chunks — pipeline: read N+1 and write N-1 overlap with GPU compute N
         chunks = list(iter_chunks(n_lat, n_lon, chunk_lat, chunk_lon))
         total_chunks = len(chunks)
 
         self._log(f"Processing {total_chunks} chunks with size ({chunk_lat}, {chunk_lon})")
 
-        for chunk_info in chunks:
-            progress_pct = (chunk_info.chunk_idx + 1) / total_chunks * 100
-            self._log(f"Processing {chunk_info} ({progress_pct:.1f}%)")
+        def _load_precip(ci):
+            t0 = time.perf_counter()
+            data = precip_da.isel(lat=ci.lat_slice, lon=ci.lon_slice).values
+            data = np.clip(data, 0, None)
+            self._log(f"  read  {ci}: {time.perf_counter() - t0:.1f}s")
+            return data
 
-            # Extract chunk data
-            chunk_data = precip_da.isel(
-                lat=chunk_info.lat_slice,
-                lon=chunk_info.lon_slice
-            ).values
+        def _write_result(lat_start, lat_end, lon_start, lon_end, data_chunk):
+            t0 = time.perf_counter()
+            with nc4.Dataset(str(output_path), 'r+') as ds:
+                ds.variables[var_name_out][:, lat_start:lat_end, lon_start:lon_end] = data_chunk
+            self._log(f"  write [{lat_start}:{lat_end},{lon_start}:{lon_end}]: {time.perf_counter() - t0:.1f}s")
 
-            # Clip negative values
-            chunk_data = np.clip(chunk_data, 0, None)
+        def _write_result_and_checkpoint(lat_start, lat_end, lon_start, lon_end,
+                                           data_chunk, chunk_idx):
+            _write_result(lat_start, lat_end, lon_start, lon_end, data_chunk)
+            completed_chunks.add(chunk_idx)
+            _save_checkpoint(completed_chunks)
 
-            # Compute SPI for chunk
-            try:
-                result_chunk, params = compute_index_parallel(
-                    chunk_data,
-                    scale=scale,
-                    data_start_year=data_start_year,
-                    calibration_start_year=calibration_start_year,
-                    calibration_end_year=calibration_end_year,
-                    periodicity=periodicity,
-                    distribution=dist
-                )
+        # Find first non-completed chunk to seed the read pipeline
+        first_pending = next((i for i, c in enumerate(chunks)
+                              if c.chunk_idx not in completed_chunks), None)
 
-                # Write result chunk to output file
-                with xr.open_dataset(output_path, mode='r+') as out_ds:
-                    out_ds[var_name_out].values[
-                        :,
-                        chunk_info.lat_start:chunk_info.lat_end,
-                        chunk_info.lon_start:chunk_info.lon_end
-                    ] = result_chunk.astype(np.float32)
-                    out_ds.to_netcdf(output_path, mode='a')
+        with ThreadPoolExecutor(max_workers=1) as read_pool, \
+             ThreadPoolExecutor(max_workers=1) as write_pool:
 
-                # Store parameters
-                if save_params:
-                    for pname in param_names:
-                        if pname in params:
-                            all_params[pname][:, chunk_info.lat_start:chunk_info.lat_end,
-                                              chunk_info.lon_start:chunk_info.lon_end] = params[pname]
+            if first_pending is None:
+                self._log("All chunks already completed (checkpoint). Skipping computation.")
+            else:
+                next_read_future = read_pool.submit(_load_precip, chunks[first_pending])
+                prev_write_future = None
 
-            except Exception as e:
-                _logger.error(f"Error processing {chunk_info}: {e}")
-                raise
+                for i, chunk_info in enumerate(chunks):
+                    progress_pct = (chunk_info.chunk_idx + 1) / total_chunks * 100
 
-            # Callback for progress tracking
-            if callback:
-                callback(chunk_info, progress_pct)
+                    # Skip chunks already written in a previous run
+                    if chunk_info.chunk_idx in completed_chunks:
+                        self._log(f"Skipping {chunk_info} (already done)")
+                        continue
 
-            # Force garbage collection after each chunk
-            del chunk_data, result_chunk
-            gc.collect()
+                    self._log(f"Processing {chunk_info} ({progress_pct:.1f}%)")
+
+                    # Wait for this chunk's data (loading started previous iteration)
+                    chunk_data = next_read_future.result()
+
+                    # Immediately start loading next pending chunk while GPU works
+                    next_pending = next((j for j in range(i + 1, total_chunks)
+                                        if chunks[j].chunk_idx not in completed_chunks), None)
+                    if next_pending is not None:
+                        next_read_future = read_pool.submit(_load_precip, chunks[next_pending])
+
+                    # Compute SPI for chunk (read N+1 and write N-1 run concurrently)
+                    try:
+                        t_gpu = time.perf_counter()
+                        result_chunk, params = compute_index_parallel(
+                            chunk_data,
+                            scale=scale,
+                            data_start_year=data_start_year,
+                            calibration_start_year=calibration_start_year,
+                            calibration_end_year=calibration_end_year,
+                            periodicity=periodicity,
+                            distribution=dist,
+                            use_gpu=self.use_gpu
+                        )
+                        self._log(f"  compute {chunk_info}: {time.perf_counter() - t_gpu:.1f}s")
+
+                        # Wait for previous write to finish before submitting new one
+                        if prev_write_future is not None:
+                            prev_write_future.result()
+
+                        # Submit write + checkpoint update for this chunk (background)
+                        result_f32 = result_chunk.astype(np.float32)
+                        prev_write_future = write_pool.submit(
+                            _write_result_and_checkpoint,
+                            chunk_info.lat_start, chunk_info.lat_end,
+                            chunk_info.lon_start, chunk_info.lon_end,
+                            result_f32, chunk_info.chunk_idx
+                        )
+
+                        # Store parameters (in-memory, fast)
+                        if save_params:
+                            for pname in param_names:
+                                if pname in params:
+                                    all_params[pname][:, chunk_info.lat_start:chunk_info.lat_end,
+                                                      chunk_info.lon_start:chunk_info.lon_end] = params[pname]
+
+                    except Exception as e:
+                        _logger.error(f"Error processing {chunk_info}: {e}")
+                        raise
+
+                    # Callback for progress tracking
+                    if callback:
+                        callback(chunk_info, progress_pct)
+
+                    del chunk_data, result_chunk
+                    gc.collect()
+
+                # Ensure final write completes
+                if prev_write_future is not None:
+                    prev_write_future.result()
+
+        # All chunks done — remove checkpoint file
+        if checkpoint_path.exists():
+            checkpoint_path.unlink()
 
         # Save parameters if requested
         if save_params:
@@ -630,8 +722,8 @@ class ChunkedProcessor:
 
         # Load precipitation
         self._log(f"Opening precipitation data")
-        if isinstance(precip, (str, Path)):
-            precip_ds = xr.open_dataset(precip, chunks={'time': -1, 'lat': self.chunk_lat, 'lon': self.chunk_lon})
+        if isinstance(precip, (str, Path, list)):
+            precip_ds = open_nc(precip, chunks={'time': 12})
             if precip_var_name is None:
                 precip_var_name = self._find_var(precip_ds, PRECIP_VAR_PATTERNS)
             precip_da = precip_ds[precip_var_name]
@@ -646,8 +738,8 @@ class ChunkedProcessor:
 
         # Load PET
         self._log(f"Opening PET data")
-        if isinstance(pet, (str, Path)):
-            pet_ds = xr.open_dataset(pet, chunks={'time': -1, 'lat': self.chunk_lat, 'lon': self.chunk_lon})
+        if isinstance(pet, (str, Path, list)):
+            pet_ds = open_nc(pet, chunks={'time': 12})
             if pet_var_name is None:
                 pet_var_name = self._find_var(pet_ds, PET_VAR_PATTERNS)
             pet_da = pet_ds[pet_var_name]
@@ -685,13 +777,19 @@ class ChunkedProcessor:
         dist = distribution.lower() if isinstance(distribution, str) else 'gamma'
         var_name_out = get_variable_name('spei', scale, periodicity, distribution=dist)
 
+        chunk_lat = min(self.chunk_lat, n_lat)
+        chunk_lon = min(self.chunk_lon, n_lon)
+
         # Create output dataset
         coords = {'time': precip_da.time, 'lat': precip_da.lat, 'lon': precip_da.lon}
 
         out_ds = xr.Dataset(
             {
                 var_name_out: xr.DataArray(
-                    data=np.full((n_time, n_lat, n_lon), np.nan, dtype=np.float32),
+                    data=da.full(
+                        (n_time, n_lat, n_lon), np.nan, dtype=np.float32,
+                        chunks=(min(12, n_time), chunk_lat, chunk_lon)
+                    ),
                     dims=['time', 'lat', 'lon'],
                     coords=coords,
                     attrs=get_variable_attributes('spei', scale, periodicity, distribution=dist)
@@ -705,9 +803,6 @@ class ChunkedProcessor:
                 global_attrs=global_attrs,
             )
         )
-
-        chunk_lat = min(self.chunk_lat, n_lat)
-        chunk_lon = min(self.chunk_lon, n_lon)
 
         encoding = {
             var_name_out: {
@@ -730,58 +825,84 @@ class ChunkedProcessor:
             for pname in param_names:
                 all_params[pname] = np.full((periods, n_lat, n_lon), np.nan, dtype=np.float32)
 
-        # Process chunks
+        # Process chunks — pipeline: read N+1 and write N-1 overlap with GPU compute N
         chunks = list(iter_chunks(n_lat, n_lon, chunk_lat, chunk_lon))
         total_chunks = len(chunks)
 
         self._log(f"Processing {total_chunks} chunks")
 
-        for chunk_info in chunks:
-            progress_pct = (chunk_info.chunk_idx + 1) / total_chunks * 100
-            self._log(f"Processing {chunk_info} ({progress_pct:.1f}%)")
+        def _load_wb(ci):
+            t0 = time.perf_counter()
+            p = precip_da.isel(lat=ci.lat_slice, lon=ci.lon_slice).values
+            e = pet_da.isel(lat=ci.lat_slice, lon=ci.lon_slice).values
+            wb = (p - e) + SPEI_WATER_BALANCE_OFFSET
+            self._log(f"  read  {ci}: {time.perf_counter() - t0:.1f}s")
+            return wb
 
-            # Extract chunk data
-            precip_chunk = precip_da.isel(lat=chunk_info.lat_slice, lon=chunk_info.lon_slice).values
-            pet_chunk = pet_da.isel(lat=chunk_info.lat_slice, lon=chunk_info.lon_slice).values
+        def _write_result(lat_start, lat_end, lon_start, lon_end, data_chunk):
+            t0 = time.perf_counter()
+            with nc4.Dataset(str(output_path), 'r+') as ds:
+                ds.variables[var_name_out][:, lat_start:lat_end, lon_start:lon_end] = data_chunk
+            self._log(f"  write [{lat_start}:{lat_end},{lon_start}:{lon_end}]: {time.perf_counter() - t0:.1f}s")
 
-            # Compute water balance with offset
-            water_balance = (precip_chunk - pet_chunk) + SPEI_WATER_BALANCE_OFFSET
+        with ThreadPoolExecutor(max_workers=1) as read_pool, \
+             ThreadPoolExecutor(max_workers=1) as write_pool:
 
-            try:
-                result_chunk, params = compute_index_parallel(
-                    water_balance,
-                    scale=scale,
-                    data_start_year=data_start_year,
-                    calibration_start_year=calibration_start_year,
-                    calibration_end_year=calibration_end_year,
-                    periodicity=periodicity,
-                    distribution=dist
-                )
+            next_read_future = read_pool.submit(_load_wb, chunks[0])
+            prev_write_future = None
 
-                # Write result
-                with xr.open_dataset(output_path, mode='r+') as out_ds:
-                    out_ds[var_name_out].values[
-                        :,
-                        chunk_info.lat_start:chunk_info.lat_end,
-                        chunk_info.lon_start:chunk_info.lon_end
-                    ] = result_chunk.astype(np.float32)
-                    out_ds.to_netcdf(output_path, mode='a')
+            for i, chunk_info in enumerate(chunks):
+                progress_pct = (chunk_info.chunk_idx + 1) / total_chunks * 100
+                self._log(f"Processing {chunk_info} ({progress_pct:.1f}%)")
 
-                if save_params:
-                    for pname in param_names:
-                        if pname in params:
-                            all_params[pname][:, chunk_info.lat_start:chunk_info.lat_end,
-                                              chunk_info.lon_start:chunk_info.lon_end] = params[pname]
+                water_balance = next_read_future.result()
 
-            except Exception as e:
-                _logger.error(f"Error processing {chunk_info}: {e}")
-                raise
+                if i + 1 < total_chunks:
+                    next_read_future = read_pool.submit(_load_wb, chunks[i + 1])
 
-            if callback:
-                callback(chunk_info, progress_pct)
+                try:
+                    t_gpu = time.perf_counter()
+                    result_chunk, params = compute_index_parallel(
+                        water_balance,
+                        scale=scale,
+                        data_start_year=data_start_year,
+                        calibration_start_year=calibration_start_year,
+                        calibration_end_year=calibration_end_year,
+                        periodicity=periodicity,
+                        distribution=dist,
+                        use_gpu=self.use_gpu
+                    )
+                    self._log(f"  compute {chunk_info}: {time.perf_counter() - t_gpu:.1f}s")
 
-            del precip_chunk, pet_chunk, water_balance, result_chunk
-            gc.collect()
+                    if prev_write_future is not None:
+                        prev_write_future.result()
+
+                    result_f32 = result_chunk.astype(np.float32)
+                    prev_write_future = write_pool.submit(
+                        _write_result,
+                        chunk_info.lat_start, chunk_info.lat_end,
+                        chunk_info.lon_start, chunk_info.lon_end,
+                        result_f32
+                    )
+
+                    if save_params:
+                        for pname in param_names:
+                            if pname in params:
+                                all_params[pname][:, chunk_info.lat_start:chunk_info.lat_end,
+                                                  chunk_info.lon_start:chunk_info.lon_end] = params[pname]
+
+                except Exception as e:
+                    _logger.error(f"Error processing {chunk_info}: {e}")
+                    raise
+
+                if callback:
+                    callback(chunk_info, progress_pct)
+
+                del water_balance, result_chunk
+                gc.collect()
+
+            if prev_write_future is not None:
+                prev_write_future.result()
 
         # Save parameters
         if save_params:
@@ -817,7 +938,7 @@ class ChunkedProcessor:
 # =============================================================================
 
 def compute_spi_global(
-    precip_path: Union[str, Path],
+    precip_path: Union[str, Path, List],
     output_path: Union[str, Path],
     scale: int = 12,
     calibration_start_year: int = 1991,
@@ -826,14 +947,16 @@ def compute_spi_global(
     n_workers: int = None,
     var_name: Optional[str] = None,
     distribution: str = 'gamma',
-    global_attrs: Optional[Dict] = None
+    global_attrs: Optional[Dict] = None,
+    use_gpu: Optional[bool] = None
 ) -> xr.Dataset:
     """
     Compute SPI for global dataset with automatic memory management.
 
     Convenience function that handles chunking automatically.
 
-    :param precip_path: Path to precipitation NetCDF file
+    :param precip_path: Path to precipitation NetCDF file, glob pattern
+        (e.g. ``'input/TerraClimate_ppt_*.nc'``), or list of file paths
     :param output_path: Path for output SPI NetCDF file
     :param scale: Accumulation scale (default: 12)
     :param calibration_start_year: Calibration start year
@@ -841,11 +964,14 @@ def compute_spi_global(
     :param chunk_size: Spatial chunk size (default: 500)
     :param n_workers: Number of parallel workers
     :param var_name: Precipitation variable name
+    :param distribution: Distribution type (default: 'gamma')
+    :param global_attrs: Optional global attribute overrides
+    :param use_gpu: Enable GPU acceleration (None = auto-detect)
     :return: Dataset with computed SPI
 
     Example:
         >>> result = compute_spi_global(
-        ...     'chirps_global_monthly.nc',
+        ...     'input/TerraClimate_ppt_*.nc',
         ...     'spi_12_global.nc',
         ...     scale=12
         ... )
@@ -853,7 +979,8 @@ def compute_spi_global(
     processor = ChunkedProcessor(
         chunk_lat=chunk_size,
         chunk_lon=chunk_size,
-        n_workers=n_workers
+        n_workers=n_workers,
+        use_gpu=use_gpu
     )
 
     return processor.compute_spi_chunked(
@@ -869,8 +996,8 @@ def compute_spi_global(
 
 
 def compute_spei_global(
-    precip_path: Union[str, Path],
-    pet_path: Union[str, Path],
+    precip_path: Union[str, Path, List],
+    pet_path: Union[str, Path, List],
     output_path: Union[str, Path],
     scale: int = 12,
     calibration_start_year: int = 1991,
@@ -880,13 +1007,14 @@ def compute_spei_global(
     precip_var_name: Optional[str] = None,
     pet_var_name: Optional[str] = None,
     distribution: str = 'gamma',
-    global_attrs: Optional[Dict] = None
+    global_attrs: Optional[Dict] = None,
+    use_gpu: Optional[bool] = None
 ) -> xr.Dataset:
     """
     Compute SPEI for global dataset with automatic memory management.
 
-    :param precip_path: Path to precipitation NetCDF file
-    :param pet_path: Path to PET NetCDF file
+    :param precip_path: Path to precipitation NetCDF file, glob pattern, or list
+    :param pet_path: Path to PET NetCDF file, glob pattern, or list
     :param output_path: Path for output SPEI NetCDF file
     :param scale: Accumulation scale
     :param calibration_start_year: Calibration start year
@@ -895,12 +1023,16 @@ def compute_spei_global(
     :param n_workers: Number of parallel workers
     :param precip_var_name: Precipitation variable name
     :param pet_var_name: PET variable name
+    :param distribution: Distribution type (default: 'gamma')
+    :param global_attrs: Optional global attribute overrides
+    :param use_gpu: Enable GPU acceleration (None = auto-detect)
     :return: Dataset with computed SPEI
     """
     processor = ChunkedProcessor(
         chunk_lat=chunk_size,
         chunk_lon=chunk_size,
-        n_workers=n_workers
+        n_workers=n_workers,
+        use_gpu=use_gpu
     )
 
     return processor.compute_spei_chunked(
