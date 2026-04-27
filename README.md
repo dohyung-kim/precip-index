@@ -72,28 +72,6 @@ Each image in the collection represents one month. The index value is stored as 
 
 Negative values indicate drought (dry conditions), positive values indicate wet conditions. Pixels over ocean and permanent ice are masked (NoData).
 
-### Example GEE code
-
-```javascript
-// Load SPI-12 ImageCollection
-var spi12 = ee.ImageCollection('projects/unicef-ccri/assets/droughts/spi12_TerraClimate_1958-2025');
-
-// Filter to a specific month (e.g. December 2023)
-var spi_dec2023 = spi12.filterDate('2023-12-01', '2024-01-01').first();
-
-// Visualize
-Map.addLayer(spi_dec2023, {
-  bands: ['spi_gamma_12_month'],
-  min: -2.5,
-  max: 2.5,
-  palette: ['8B1A1A', 'DE2929', 'F3641D', 'FDC404', 'FFFFFF', '89CDFF', '2C7BB6', '1A3399']
-}, 'SPI-12 Dec 2023');
-
-// Extract drought area (SPI <= -1.0)
-var drought = spi_dec2023.lte(-1.0);
-```
-
----
 
 ## Pipeline
 
