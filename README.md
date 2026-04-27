@@ -44,33 +44,60 @@ This repository computes both indices at **12-month time scale** (SPI-12, SPEI-1
 
 ## Results on Google Earth Engine
 
-The computed SPI-12 and SPEI-12 are published as assets on Google Earth Engine under the UNICEF CCRI project.
+The final outputs are **drought probability layers** published as GEE assets under the UNICEF CCRI project. Rather than showing the SPI/SPEI index value for a single month, each asset answers the question: *"based on the full 1958–2025 record, how often does this pixel experience drought of a given severity?"*
 
-### SPI-12
+Each asset is a single multi-band image at 0.0417° (~4.6 km) resolution covering the full globe.
+
+### SPI-12 Probability Layer
 
 **Asset:** `projects/unicef-ccri/assets/droughts/spi12_TerraClimate_1958-2025`
 
-```javascript
-var spi12 = ee.ImageCollection('projects/unicef-ccri/assets/droughts/spi12_TerraClimate_1958-2025');
-```
-
-### SPEI-12
+### SPEI-12 Probability Layer
 
 **Asset:** `projects/unicef-ccri/assets/droughts/spei12_TerraClimate_1958-2025`
 
-```javascript
-var spei12 = ee.ImageCollection('projects/unicef-ccri/assets/droughts/spei12_TerraClimate_1958-2025');
-```
-
 ### Band information
-
-Each image in the collection represents one month. The index value is stored as a float32 band:
 
 | Band | Name | Description | Range |
 |------|------|-------------|-------|
-| 1 | `spi_gamma_12_month` / `spei_gamma_12_month` | Standardized index value | −3.09 to 3.09 |
+| 1 | `prob_spi_neg1p0` / `prob_spei_neg1p0` | P(index ≤ −1.0) — probability of moderate drought or worse | 0 to 1 |
+| 2 | `prob_spi_neg1p5` / `prob_spei_neg1p5` | P(index ≤ −1.5) — probability of severe drought or worse | 0 to 1 |
+| 3 | `prob_spi_neg2p0` / `prob_spei_neg2p0` | P(index ≤ −2.0) — probability of extreme drought | 0 to 1 |
+| 4 | `quality_flag` | Data quality: 1 = high, 2 = medium, 3 = low | 1, 2, or 3 |
 
-Negative values indicate drought (dry conditions), positive values indicate wet conditions. Pixels over ocean and permanent ice are masked (NoData).
+**Quality flag criteria:**
+- **High (1):** ≥ 30 months with non-zero precipitation AND mean annual precipitation ≥ 200 mm
+- **Medium (2):** ≥ 10 months with non-zero precipitation AND mean annual precipitation ≥ 100 mm
+- **Low (3):** all other land pixels (very arid or sparse data)
+- **NoData:** ocean, permanent ice, and pixels with no valid SPI/SPEI values
+
+Probability values are computed from the full 1958–2025 record (804 monthly time steps). A pixel with `prob_spi_neg1p0 = 0.15` means it experienced moderate-or-worse drought in 15% of all months over that 67-year period.
+
+### Example GEE code
+
+```javascript
+// Load SPI-12 probability layer
+var spi12_prob = ee.Image('projects/unicef-ccri/assets/droughts/spi12_TerraClimate_1958-2025');
+
+// Visualize probability of moderate drought (Band 1)
+Map.addLayer(spi12_prob.select('prob_spi_neg1p0'), {
+  min: 0, max: 0.4,
+  palette: ['white', 'yellow', 'orange', 'red', 'darkred']
+}, 'P(SPI-12 ≤ -1.0)');
+
+// Visualize probability of extreme drought (Band 3)
+Map.addLayer(spi12_prob.select('prob_spi_neg2p0'), {
+  min: 0, max: 0.15,
+  palette: ['white', 'orange', 'red']
+}, 'P(SPI-12 ≤ -2.0)');
+
+// Mask to high-quality pixels only
+var high_quality = spi12_prob.select('quality_flag').eq(1);
+var prob_hq = spi12_prob.select('prob_spi_neg1p0').updateMask(high_quality);
+
+// Load SPEI-12 probability layer
+var spei12_prob = ee.Image('projects/unicef-ccri/assets/droughts/spei12_TerraClimate_1958-2025');
+```
 
 
 ## Pipeline
